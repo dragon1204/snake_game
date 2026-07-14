@@ -56,16 +56,56 @@ volatile uint8_t requestJoyRecalibrate = 0;
 
 /* Game state */
 volatile int gameSpeed = 150;
-volatile int snakeDir = 1;    /* 0:Up, 1:Right, 2:Down, 3:Left */
+volatile int snakeDir = 1;    /* 0:Up, 1:Right, 2:Down, 3:Left (requested; may change more than once per tick) */
+volatile int lastAppliedDir = 1; /* direction actually used by the last moveSnake() - the real heading */
 volatile int snakeLength = 3;
-volatile int gameStatus = 0;  /* 0:Menu, 1:Playing, 2:Game Over */
+volatile int gameStatus = 0;  /* 0:Menu, 1:Playing, 2:Game Over, 3:Paused, 4:Help */
 volatile int currentMap = 1;  /* 1 to 5 */
 volatile int score = 0;
 volatile int highScore = 0;
+volatile uint8_t highScoreDirty = 0; /* set when highScore changes, cleared once saved to flash */
 int snakeX[MAX_GAME_X * MAX_GAME_Y];
 int snakeY[MAX_GAME_X * MAX_GAME_Y];
-int foodX, foodY;
 int tailX, tailY;
+
+/* Multiple food pellets can be on the map at once, each with its own type,
+   position and lifetime - so the player is never stuck waiting on a single
+   pellet, and an uneaten pellet eventually expires and relocates on its own. */
+#define MAX_FOOD 3
+#define FOOD_LIFETIME_TICKS 40 /* ~10s at 250ms per game-task loop iteration */
+int foodX[MAX_FOOD];
+int foodY[MAX_FOOD];
+volatile int foodType[MAX_FOOD];     /* 0 normal, 1 bonus(+5), 2 speed-boost, 3 shrink */
+volatile uint8_t foodActive[MAX_FOOD];
+volatile int foodTicksLeft[MAX_FOOD];
+volatile int lastEatenFoodSlot = -1; /* set by checkCollision(), read right after */
+
+/* Cells that must be blacked out because something vanished from them without
+   the snake body or a new food happening to redraw over that cell this frame
+   (shrink-food removing 2 segments at once, or a food pellet expiring). */
+#define MAX_PENDING_CLEAR (MAX_FOOD + 2)
+int pendingClearX[MAX_PENDING_CLEAR];
+int pendingClearY[MAX_PENDING_CLEAR];
+volatile int pendingClearCount = 0;
+
+/* Difficulty presets (ms delay per game tick, lower = faster). Each level also
+   has its own speed floor and ramp-up step, so they stay distinct all game
+   long instead of converging to the same top speed after a bit of eating. */
+#define DIFF_COUNT 3
+static const int difficultySpeeds[DIFF_COUNT]    = {220, 150,  90}; /* starting speed */
+static const int difficultyMinSpeeds[DIFF_COUNT] = {130,  70,  35}; /* speed floor */
+static const int difficultyStepMs[DIFF_COUNT]    = {  3,   5,   8}; /* ms faster per food eaten */
+static const char * const difficultyNames[DIFF_COUNT] = {"EASY  ", "NORMAL", "HARD  "};
+volatile int difficulty = 1; /* 0:Easy, 1:Normal, 2:Hard */
+
+volatile int speedBoostTicks = 0;
+#define SPEED_BOOST_DURATION_TICKS 20
+/* Boosted delay = gameSpeed * NUM/DEN (a proportional cut, not a flat ms
+   subtraction) so the boost scales with whatever the current difficulty's
+   speed happens to be, instead of a flat -60ms letting Easy's floor dip
+   into Normal's speed range. */
+#define SPEED_BOOST_FACTOR_NUM 7
+#define SPEED_BOOST_FACTOR_DEN 10
 
 osThreadId gameTaskHandle;
 osThreadId displayTaskHandle;
@@ -99,6 +139,10 @@ static void BSP_SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_S
 static uint16_t ADC_ReadChannel(ADC_HandleTypeDef *hadc);
 static void JoystickCalibrateCenter(void);
 static int ReadJoystickDirection(void);
+
+/* High score persistence (internal Flash) */
+static void Flash_LoadHighScore(void);
+static void Flash_SaveHighScore(int value);
 
 uint8_t BSP_TS_Init(uint16_t XSize, uint16_t YSize);
 void    BSP_TS_GetState(TS_StateTypeDef* TsState);
@@ -188,9 +232,10 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
   }
   else if (map_id == 2) // Map 2: Center Box
   {
-    // A square in the middle: rows/cols 8 to 15
-    if (((x == 8 || x == 15) && y >= 8 && y <= 15) ||
-        ((y == 8 || y == 15) && x >= 8 && x <= 15))
+    // Solid square in the middle: rows/cols 8 to 15 (filled, not just the
+    // outline - a hollow outline traps unreachable cells inside it, and food
+    // could spawn there with no way for the snake to ever reach it)
+    if (x >= 8 && x <= 15 && y >= 8 && y <= 15)
     {
       return 1;
     }
@@ -295,7 +340,11 @@ void drawMenuScreen(void)
   char mapBuf[16];
   sprintf(mapBuf, "< MAP %d >", currentMap);
   LCD_DrawString(70, 130, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
-  
+
+  char diffBuf[24];
+  sprintf(diffBuf, "DIFF: %s", difficultyNames[difficulty]);
+  LCD_DrawString(60, 150, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
+
   // Start Button: X: 70-170, Y: 170-200
   LCD_FillRect(70, 170, 100, 30, COLOR_CYAN);
   for(int b=0; b<100; b++) {
@@ -307,6 +356,61 @@ void drawMenuScreen(void)
     LCD_DrawPixel(170, 170 + b, COLOR_WHITE);
   }
   LCD_DrawString(92, 177, "START", &Font16, COLOR_BLACK, COLOR_CYAN);
+
+  // Help Button: X: 70-170, Y: 207-232
+  LCD_FillRect(70, 207, 100, 25, COLOR_GRAY);
+  for(int b=0; b<100; b++) {
+    LCD_DrawPixel(70 + b, 207, COLOR_WHITE);
+    LCD_DrawPixel(70 + b, 232, COLOR_WHITE);
+  }
+  for(int b=0; b<25; b++) {
+    LCD_DrawPixel(70, 207 + b, COLOR_WHITE);
+    LCD_DrawPixel(170, 207 + b, COLOR_WHITE);
+  }
+  LCD_DrawString(95, 212, "HELP", &Font16, COLOR_WHITE, COLOR_GRAY);
+}
+
+void drawHelpScreen(void)
+{
+  LCD_FillRect(0, 0, 240, 320, COLOR_BLACK);
+
+  LCD_DrawString(45, 10, "HOW TO PLAY", &Font20, COLOR_YELLOW, COLOR_BLACK);
+
+  LCD_DrawString(10, 50,  "MOVE: Joystick/D-pad", &Font12, COLOR_WHITE, COLOR_BLACK);
+  LCD_DrawString(10, 68,  "PA0 BUTTON:", &Font12, COLOR_CYAN, COLOR_BLACK);
+  LCD_DrawString(10, 84,  "Start/Pause/Resume/Back", &Font12, COLOR_WHITE, COLOR_BLACK);
+  LCD_DrawString(10, 110, "IN MENU:", &Font12, COLOR_CYAN, COLOR_BLACK);
+  LCD_DrawString(10, 126, "L/R: Map   U/D: Difficulty", &Font12, COLOR_WHITE, COLOR_BLACK);
+
+  LCD_DrawString(10, 152, "FOOD COLORS:", &Font12, COLOR_CYAN, COLOR_BLACK);
+
+  LCD_FillRect(10, 172, 10, 10, COLOR_RED);
+  LCD_DrawString(28, 171, "Normal", &Font12, COLOR_WHITE, COLOR_BLACK);
+
+  LCD_FillRect(10, 190, 10, 10, COLOR_ORANGE);
+  LCD_DrawString(28, 189, "Bonus +5 pts", &Font12, COLOR_WHITE, COLOR_BLACK);
+
+  LCD_FillRect(10, 208, 10, 10, COLOR_CYAN);
+  LCD_DrawString(28, 207, "Speed boost", &Font12, COLOR_WHITE, COLOR_BLACK);
+
+  LCD_FillRect(10, 226, 10, 10, COLOR_BLUE);
+  LCD_DrawString(28, 225, "Shrink snake", &Font12, COLOR_WHITE, COLOR_BLACK);
+
+  LCD_DrawString(35, 270, "TAP TO GO BACK", &Font16, COLOR_YELLOW, COLOR_BLACK);
+}
+
+void drawPausedOverlay(void)
+{
+  LCD_FillRect(45, 100, 150, 40, COLOR_DARKGRAY);
+  for (int b = 0; b < 150; b++) {
+    LCD_DrawPixel(45 + b, 100, COLOR_WHITE);
+    LCD_DrawPixel(45 + b, 140, COLOR_WHITE);
+  }
+  for (int b = 0; b < 40; b++) {
+    LCD_DrawPixel(45, 100 + b, COLOR_WHITE);
+    LCD_DrawPixel(195, 100 + b, COLOR_WHITE);
+  }
+  LCD_DrawString(75, 113, "PAUSED", &Font16, COLOR_YELLOW, COLOR_DARKGRAY);
 }
 
 void drawGameOverScreen(void)
@@ -384,7 +488,18 @@ uint16_t IOE_ReadMultiple(uint8_t Addr, uint8_t Reg, uint8_t *pBuffer, uint16_t 
 }
 
 /* ---------- Game logic ---------- */
-void spawnFood(void)
+static void QueueClear(int x, int y)
+{
+  if (pendingClearCount < MAX_PENDING_CLEAR) {
+    pendingClearX[pendingClearCount] = x;
+    pendingClearY[pendingClearCount] = y;
+    pendingClearCount++;
+  }
+}
+
+/* Spawns a new pellet into food slot `slot`, avoiding the snake body,
+   obstacles, and every OTHER currently-active food slot. */
+void spawnFoodAt(int slot)
 {
   int ranX, ranY, flag;
   do {
@@ -397,9 +512,25 @@ void spawnFood(void)
     if (flag && isObstacle(ranX, ranY, currentMap)) {
       flag = 0;
     }
+    if (flag) {
+      for (int f = 0; f < MAX_FOOD; f++) {
+        if (f != slot && foodActive[f] && foodX[f] == ranX && foodY[f] == ranY) {
+          flag = 0;
+          break;
+        }
+      }
+    }
   } while (!flag);
-  foodX = ranX;
-  foodY = ranY;
+  foodX[slot] = ranX;
+  foodY[slot] = ranY;
+  foodTicksLeft[slot] = FOOD_LIFETIME_TICKS;
+  foodActive[slot] = 1;
+
+  int r = rand() % 100;
+  if (r < 12)      foodType[slot] = 1; /* 12%: bonus (+5 pts) */
+  else if (r < 22) foodType[slot] = 2; /* 10%: speed boost (temporary) */
+  else if (r < 30) foodType[slot] = 3; /*  8%: shrink (-2 length, min 3) */
+  else             foodType[slot] = 0; /* 70%: normal */
 }
 
 void moveSnake(void)
@@ -415,19 +546,28 @@ void moveSnake(void)
   else if (snakeDir == 1) snakeX[0] = (snakeX[0] + 1) % MAX_GAME_X;
   else if (snakeDir == 2) snakeY[0] = (snakeY[0] + 1) % MAX_GAME_Y;
   else if (snakeDir == 3) snakeX[0] = (snakeX[0] - 1 + MAX_GAME_X) % MAX_GAME_X;
+  lastAppliedDir = snakeDir; /* direction actually reflected in the body layout */
 }
 
 void resetGame(void)
 {
   snakeLength = 3;
   snakeDir = 1;
+  lastAppliedDir = 1;
   for (int i = 0; i < snakeLength; i++) {
     snakeX[i] = 5 - i;
     snakeY[i] = 3;
   }
   score = 0;
-  gameSpeed = 150;
-  spawnFood();
+  gameSpeed = difficultySpeeds[difficulty];
+  speedBoostTicks = 0;
+  pendingClearCount = 0;
+  for (int f = 0; f < MAX_FOOD; f++) {
+    foodActive[f] = 0;
+  }
+  for (int f = 0; f < MAX_FOOD; f++) {
+    spawnFoodAt(f);
+  }
   drawMap(currentMap);
   drawControlPanel();
 }
@@ -440,7 +580,12 @@ int checkCollision(void)
   for (int i = 1; i < snakeLength; i++) {
     if (snakeX[0] == snakeX[i] && snakeY[0] == snakeY[i]) return 0; /* Bit itself */
   }
-  if (snakeX[0] == foodX && snakeY[0] == foodY) return 2; /* Ate food */
+  for (int f = 0; f < MAX_FOOD; f++) {
+    if (foodActive[f] && snakeX[0] == foodX[f] && snakeY[0] == foodY[f]) {
+      lastEatenFoodSlot = f;
+      return 2; /* Ate food */
+    }
+  }
   return 1; /* Normal move */
 }
 
@@ -460,6 +605,7 @@ int main(void)
   MX_ADC1_Init();
   MX_ADC2_Init();
   JoystickCalibrateCenter();
+  Flash_LoadHighScore();
 
   /* Initialize SDRAM */
   FMC_SDRAM_CommandTypeDef command;
@@ -510,25 +656,88 @@ void StartGameTask(void const * argument)
     osDelay(250);
     
     if (gameStatus == 1) {
-      if (osKernelSysTick() - lastTick >= gameSpeed) {
+      /* Expire stale pellets so no single pellet is mandatory - one that
+         sits uneaten for too long vanishes and relocates on its own. */
+      osMutexWait(gameMutexHandle, osWaitForever);
+      for (int f = 0; f < MAX_FOOD; f++) {
+        if (foodActive[f]) {
+          foodTicksLeft[f]--;
+          if (foodTicksLeft[f] <= 0) {
+            QueueClear(foodX[f], foodY[f]);
+            foodActive[f] = 0;
+            spawnFoodAt(f);
+          }
+        }
+      }
+      osMutexRelease(gameMutexHandle);
+
+      int effectiveDelay = gameSpeed;
+      if (speedBoostTicks > 0) {
+        effectiveDelay = (gameSpeed * SPEED_BOOST_FACTOR_NUM) / SPEED_BOOST_FACTOR_DEN;
+        if (effectiveDelay < 30) effectiveDelay = 30;
+      }
+
+      if (osKernelSysTick() - lastTick >= (uint32_t)effectiveDelay) {
         lastTick = osKernelSysTick();
-        
+
         osMutexWait(gameMutexHandle, osWaitForever);
         moveSnake();
+        if (speedBoostTicks > 0) speedBoostTicks--;
         int collision = checkCollision();
+        uint8_t needSave = 0;
         if (collision == 0) {
           gameStatus = 2; /* Game over */
+          if (highScoreDirty) { needSave = 1; highScoreDirty = 0; }
         } else if (collision == 2) {
-          snakeLength++;
-          score++;
-          if (score > highScore) {
-            highScore = score;
+          int slot = lastEatenFoodSlot;
+          int eatenType = foodType[slot];
+          switch (eatenType) {
+            case 1: /* bonus */
+              score += 5;
+              snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
+              snakeLength++;
+              break;
+            case 2: /* speed boost */
+              score++;
+              snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
+              snakeLength++;
+              speedBoostTicks = SPEED_BOOST_DURATION_TICKS;
+              break;
+            case 3: /* shrink */
+              score++;
+              {
+                int newLen = snakeLength - 2;
+                if (newLen < 3) newLen = 3;
+                int removed = snakeLength - newLen;
+                for (int k = 0; k < removed; k++) {
+                  QueueClear(snakeX[snakeLength - 1 - k], snakeY[snakeLength - 1 - k]);
+                }
+                snakeLength = newLen;
+              }
+              break;
+            default: /* normal */
+              score++;
+              snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
+              snakeLength++;
+              break;
           }
           if (snakeLength > MAX_GAME_X * MAX_GAME_Y) snakeLength = MAX_GAME_X * MAX_GAME_Y;
-          spawnFood();
-          if (gameSpeed > 50) gameSpeed -= 5;
+          if (score > highScore) {
+            highScore = score;
+            highScoreDirty = 1;
+          }
+          foodActive[slot] = 0;
+          spawnFoodAt(slot);
+          if (gameSpeed > difficultyMinSpeeds[difficulty]) {
+            gameSpeed -= difficultyStepMs[difficulty];
+            if (gameSpeed < difficultyMinSpeeds[difficulty]) gameSpeed = difficultyMinSpeeds[difficulty];
+          }
         }
         osMutexRelease(gameMutexHandle);
+
+        if (needSave) {
+          Flash_SaveHighScore(highScore);
+        }
       }
     }
   }
@@ -539,13 +748,14 @@ void StartDisplayTask(void const * argument)
   int lastStatus = -1;
   int lastScore = -1;
   int lastMap = -1;
-  
+  int lastDifficulty = -1;
+
   for(;;)
   {
     osMutexWait(gameMutexHandle, osWaitForever);
     int currentStatus = gameStatus;
     osMutexRelease(gameMutexHandle);
-    
+
     if (currentStatus != lastStatus)
     {
       lastStatus = currentStatus;
@@ -554,6 +764,7 @@ void StartDisplayTask(void const * argument)
         drawMenuScreen();
         drawControlPanel();
         lastMap = currentMap;
+        lastDifficulty = difficulty;
         requestJoyRecalibrate = 1; /* re-center joystick fresh each time Menu is shown */
       }
       else if (currentStatus == 2) // Game Over
@@ -561,11 +772,19 @@ void StartDisplayTask(void const * argument)
         drawGameOverScreen();
         drawControlPanel();
       }
-      else if (currentStatus == 1) // Just started playing
+      else if (currentStatus == 1) // Just started playing, or resumed from Pause
       {
         drawMap(currentMap);
         drawControlPanel();
         lastScore = score;
+      }
+      else if (currentStatus == 3) // Paused
+      {
+        drawPausedOverlay();
+      }
+      else if (currentStatus == 4) // Help
+      {
+        drawHelpScreen();
       }
     }
     
@@ -578,15 +797,31 @@ void StartDisplayTask(void const * argument)
       {
         LCD_FillRect(tailX * PIXEL_SIZE, tailY * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_BLACK);
       }
-      
+
+      // Clear cells vacated by shrink-food or an expired pellet - nothing
+      // else will get redrawn over these this frame, so they need this
+      // explicit blackout or a "ghost" square would linger on screen.
+      for (int c = 0; c < pendingClearCount; c++)
+      {
+        LCD_FillRect(pendingClearX[c] * PIXEL_SIZE, pendingClearY[c] * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_BLACK);
+      }
+      pendingClearCount = 0;
+
       // Draw snake
       for (int i = 0; i < snakeLength; i++) {
         uint16_t color = (i == 0) ? COLOR_YELLOW : COLOR_GREEN;
         LCD_FillRect(snakeX[i] * PIXEL_SIZE, snakeY[i] * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, color);
       }
-      
-      // Draw food
-      LCD_FillRect(foodX * PIXEL_SIZE, foodY * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_RED);
+
+      // Draw all active food pellets (color indicates type: normal/bonus/speed/shrink)
+      for (int f = 0; f < MAX_FOOD; f++) {
+        if (foodActive[f]) {
+          uint16_t foodColor = (foodType[f] == 1) ? COLOR_ORANGE :
+                               (foodType[f] == 2) ? COLOR_CYAN :
+                               (foodType[f] == 3) ? COLOR_BLUE : COLOR_RED;
+          LCD_FillRect(foodX[f] * PIXEL_SIZE, foodY[f] * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, foodColor);
+        }
+      }
       
       // Update score if it changed
       if (score != lastScore)
@@ -612,6 +847,13 @@ void StartDisplayTask(void const * argument)
         // Also update control panel map number
         sprintf(mapBuf, "%02d", currentMap);
         LCD_DrawString(180, 288, mapBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
+      }
+      if (difficulty != lastDifficulty)
+      {
+        lastDifficulty = difficulty;
+        char diffBuf[24];
+        sprintf(diffBuf, "DIFF: %s", difficultyNames[difficulty]);
+        LCD_DrawString(60, 150, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
       }
     }
     
@@ -651,24 +893,38 @@ void StartInputTask(void const * argument)
       if (inputDetected && y >= 240)
       {
         if (x >= 35 && x <= 75 && y >= 240 && y <= 268) {
-          if (snakeDir != 2) snakeDir = 0;
+          if (lastAppliedDir != 2) snakeDir = 0;
         }
         else if (x >= 35 && x <= 75 && y >= 292 && y <= 320) {
-          if (snakeDir != 0) snakeDir = 2;
+          if (lastAppliedDir != 0) snakeDir = 2;
         }
         else if (x >= 10 && x <= 38 && y >= 265 && y <= 295) {
-          if (snakeDir != 1) snakeDir = 3;
+          if (lastAppliedDir != 1) snakeDir = 3;
         }
         else if (x >= 72 && x <= 100 && y >= 265 && y <= 295) {
-          if (snakeDir != 3) snakeDir = 1;
+          if (lastAppliedDir != 3) snakeDir = 1;
         }
       }
-      // Joystick direction (Up/Right/Down/Left), blocked from reversing onto itself
-      if (joyDir == 0 && snakeDir != 2) snakeDir = 0;
-      else if (joyDir == 1 && snakeDir != 3) snakeDir = 1;
-      else if (joyDir == 2 && snakeDir != 0) snakeDir = 2;
-      else if (joyDir == 3 && snakeDir != 1) snakeDir = 3;
+      // Joystick direction (Up/Right/Down/Left), blocked from reversing onto the
+      // snake's actual current heading (not the possibly-already-changed snakeDir,
+      // which could be flipped twice within one movement tick otherwise)
+      if (joyDir == 0 && lastAppliedDir != 2) snakeDir = 0;
+      else if (joyDir == 1 && lastAppliedDir != 3) snakeDir = 1;
+      else if (joyDir == 2 && lastAppliedDir != 0) snakeDir = 2;
+      else if (joyDir == 3 && lastAppliedDir != 1) snakeDir = 3;
+      if (buttonPressed) gameStatus = 3; /* Pause */
       osMutexRelease(gameMutexHandle);
+      if (buttonPressed) osDelay(200);
+    }
+    else if (gameStatus == 3) // Paused state
+    {
+      if (buttonPressed)
+      {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        gameStatus = 1; /* Resume */
+        osMutexRelease(gameMutexHandle);
+        osDelay(200);
+      }
     }
     else if (gameStatus == 0) // Menu state
     {
@@ -700,8 +956,31 @@ void StartInputTask(void const * argument)
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
+        // Touch on D-pad UP to increase difficulty
+        else if (x >= 35 && x <= 75 && y >= 240 && y <= 268)
+        {
+          osMutexWait(gameMutexHandle, osWaitForever);
+          if (difficulty < DIFF_COUNT - 1) difficulty++;
+          osMutexRelease(gameMutexHandle);
+          osDelay(200);
+        }
+        // Touch on D-pad DOWN to decrease difficulty
+        else if (x >= 35 && x <= 75 && y >= 292 && y <= 320)
+        {
+          osMutexWait(gameMutexHandle, osWaitForever);
+          if (difficulty > 0) difficulty--;
+          osMutexRelease(gameMutexHandle);
+          osDelay(200);
+        }
+        // Touch on HELP button
+        else if (x >= 70 && x <= 170 && y >= 207 && y <= 232)
+        {
+          osMutexWait(gameMutexHandle, osWaitForever);
+          gameStatus = 4;
+          osMutexRelease(gameMutexHandle);
+        }
       }
-      // Joystick Left/Right cycles map, button (PA0) starts the game
+      // Joystick Left/Right cycles map, Up/Down cycles difficulty, button (PA0) starts the game
       if (joyDir == 3)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
@@ -715,6 +994,20 @@ void StartInputTask(void const * argument)
         osMutexWait(gameMutexHandle, osWaitForever);
         currentMap++;
         if (currentMap > 5) currentMap = 1;
+        osMutexRelease(gameMutexHandle);
+        osDelay(200);
+      }
+      else if (joyDir == 0)
+      {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        if (difficulty < DIFF_COUNT - 1) difficulty++;
+        osMutexRelease(gameMutexHandle);
+        osDelay(200);
+      }
+      else if (joyDir == 2)
+      {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        if (difficulty > 0) difficulty--;
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
@@ -741,6 +1034,17 @@ void StartInputTask(void const * argument)
       }
       // Joystick button (PA0) returns to menu
       if (buttonPressed)
+      {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        gameStatus = 0;
+        osMutexRelease(gameMutexHandle);
+        osDelay(200);
+      }
+    }
+    else if (gameStatus == 4) // Help screen
+    {
+      // Any tap or the joystick button returns to Menu
+      if (inputDetected || buttonPressed)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
         gameStatus = 0;
@@ -1040,6 +1344,44 @@ void BSP_TS_GetState(TS_StateTypeDef* TsState)
       TsState->X = _x;
       TsState->Y = _y;
   }
+}
+
+/* ---------- High score persistence (internal Flash, Bank2 Sector 12) ----------
+   Sector 12 is a 16KB sector at the start of Bank2 (0x08100000), well outside
+   the program's own Bank1 code/data, so it's safe to erase/rewrite. */
+#define HS_FLASH_ADDR   0x08100000U
+#define HS_FLASH_SECTOR FLASH_SECTOR_12
+#define HS_FLASH_MAGIC  0x534E414BU /* 'SNAK' */
+
+typedef struct {
+  uint32_t magic;
+  uint32_t highScore;
+} HighScoreRecord;
+
+static void Flash_LoadHighScore(void)
+{
+  const HighScoreRecord *rec = (const HighScoreRecord *)HS_FLASH_ADDR;
+  highScore = (rec->magic == HS_FLASH_MAGIC) ? (int)rec->highScore : 0;
+}
+
+static void Flash_SaveHighScore(int value)
+{
+  FLASH_EraseInitTypeDef eraseInit;
+  uint32_t sectorError = 0;
+
+  HAL_FLASH_Unlock();
+
+  eraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
+  eraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+  eraseInit.Sector = HS_FLASH_SECTOR;
+  eraseInit.NbSectors = 1;
+  eraseInit.Banks = FLASH_BANK_2;
+  HAL_FLASHEx_Erase(&eraseInit, &sectorError);
+
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, HS_FLASH_ADDR, HS_FLASH_MAGIC);
+  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, HS_FLASH_ADDR + 4, (uint32_t)value);
+
+  HAL_FLASH_Lock();
 }
 
 /* ---------- Joystick (analog VRx/VRy + onboard PA0 button) ---------- */
