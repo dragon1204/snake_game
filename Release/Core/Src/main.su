@@ -1,0 +1,10 @@
+../Core/Src/main.c:311:6:StartDisplayTask	32	static
+../Core/Src/main.c:332:6:StartInputTask	16	static
+../Core/Src/main.c:93:6:spawnFood	24	static
+../Core/Src/main.c:109:6:moveSnake	12	static
+../Core/Src/main.c:120:6:resetGame	8	static
+../Core/Src/main.c:131:5:checkCollision	16	static
+../Core/Src/main.c:283:6:StartGameTask	8	static
+../Core/Src/main.c:215:6:SystemClock_Config	88	static,ignoring_inline_asm
+../Core/Src/main.c:145:5:main	80	static
+../Core/Src/main.c:363:6:Error_Handler	0	static,ignoring_inline_asm
