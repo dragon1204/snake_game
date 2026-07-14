@@ -98,6 +98,12 @@ static const int difficultyStepMs[DIFF_COUNT]    = {  3,   5,   8}; /* ms faster
 static const char * const difficultyNames[DIFF_COUNT] = {"EASY  ", "NORMAL", "HARD  "};
 volatile int difficulty = 1; /* 0:Easy, 1:Normal, 2:Hard */
 
+#define COLOR_COUNT 5
+#define COLOR_PINK 0xF81F
+static const uint16_t snakeColors[COLOR_COUNT] = {COLOR_GREEN, COLOR_RED, COLOR_BLUE, COLOR_PINK, COLOR_WHITE};
+static const char * const snakeColorNames[COLOR_COUNT] = {"GREEN", "RED  ", "BLUE ", "PINK ", "WHITE"};
+volatile int currentColorIdx = 0;
+
 volatile int speedBoostTicks = 0;
 #define SPEED_BOOST_DURATION_TICKS 20
 /* Boosted delay = gameSpeed * NUM/DEN (a proportional cut, not a flat ms
@@ -328,6 +334,16 @@ void drawControlPanel(void)
   sprintf(mapBuf, "%02d", currentMap);
   LCD_DrawString(125, 288, "MAP  :", &Font12, COLOR_GREEN, COLOR_DARKGRAY);
   LCD_DrawString(180, 288, mapBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
+  
+  // SPEED buttons
+  LCD_FillRect(125, 303, 15, 15, COLOR_GRAY);
+  LCD_DrawString(129, 305, "-", &Font12, COLOR_WHITE, COLOR_GRAY);
+  LCD_FillRect(145, 303, 15, 15, COLOR_GRAY);
+  LCD_DrawString(148, 305, "+", &Font12, COLOR_WHITE, COLOR_GRAY);
+  char spdBuf[8];
+  sprintf(spdBuf, "%d", gameSpeed);
+  LCD_DrawString(165, 305, "SPD:", &Font12, COLOR_CYAN, COLOR_DARKGRAY);
+  LCD_DrawString(195, 305, spdBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
 }
 
 void drawMenuScreen(void)
@@ -342,8 +358,12 @@ void drawMenuScreen(void)
   LCD_DrawString(70, 130, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
 
   char diffBuf[24];
-  sprintf(diffBuf, "DIFF: %s", difficultyNames[difficulty]);
+  sprintf(diffBuf, "SPEED: %s", difficultyNames[difficulty]);
   LCD_DrawString(60, 150, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
+
+  char colBuf[24];
+  sprintf(colBuf, "COLOR: %s", snakeColorNames[currentColorIdx]);
+  LCD_DrawString(60, 162, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
 
   // Start Button: X: 70-170, Y: 170-200
   LCD_FillRect(70, 170, 100, 30, COLOR_CYAN);
@@ -749,6 +769,8 @@ void StartDisplayTask(void const * argument)
   int lastScore = -1;
   int lastMap = -1;
   int lastDifficulty = -1;
+  int lastColorIdx = -1;
+  int lastGameSpeed = -1;
 
   for(;;)
   {
@@ -765,6 +787,7 @@ void StartDisplayTask(void const * argument)
         drawControlPanel();
         lastMap = currentMap;
         lastDifficulty = difficulty;
+        lastColorIdx = currentColorIdx;
         requestJoyRecalibrate = 1; /* re-center joystick fresh each time Menu is shown */
       }
       else if (currentStatus == 2) // Game Over
@@ -777,6 +800,7 @@ void StartDisplayTask(void const * argument)
         drawMap(currentMap);
         drawControlPanel();
         lastScore = score;
+        lastGameSpeed = gameSpeed;
       }
       else if (currentStatus == 3) // Paused
       {
@@ -809,7 +833,7 @@ void StartDisplayTask(void const * argument)
 
       // Draw snake
       for (int i = 0; i < snakeLength; i++) {
-        uint16_t color = (i == 0) ? COLOR_YELLOW : COLOR_GREEN;
+        uint16_t color = (i == 0) ? COLOR_YELLOW : snakeColors[currentColorIdx];
         LCD_FillRect(snakeX[i] * PIXEL_SIZE, snakeY[i] * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, color);
       }
 
@@ -830,6 +854,15 @@ void StartDisplayTask(void const * argument)
         char scoreBuf[16];
         sprintf(scoreBuf, "%02d", score);
         LCD_DrawString(180, 248, scoreBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
+      }
+
+      // Update speed if it changed
+      if (gameSpeed != lastGameSpeed)
+      {
+        lastGameSpeed = gameSpeed;
+        char spdBuf[8];
+        sprintf(spdBuf, "%-3d", gameSpeed); // pad with spaces in case it goes from 100 to 90
+        LCD_DrawString(195, 305, spdBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
       }
       
       osMutexRelease(gameMutexHandle);
@@ -852,8 +885,15 @@ void StartDisplayTask(void const * argument)
       {
         lastDifficulty = difficulty;
         char diffBuf[24];
-        sprintf(diffBuf, "DIFF: %s", difficultyNames[difficulty]);
+        sprintf(diffBuf, "SPEED: %s", difficultyNames[difficulty]);
         LCD_DrawString(60, 150, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
+      }
+      if (currentColorIdx != lastColorIdx)
+      {
+        lastColorIdx = currentColorIdx;
+        char colBuf[24];
+        sprintf(colBuf, "COLOR: %s", snakeColorNames[currentColorIdx]);
+        LCD_DrawString(60, 162, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
       }
     }
     
@@ -903,6 +943,20 @@ void StartInputTask(void const * argument)
         }
         else if (x >= 72 && x <= 100 && y >= 265 && y <= 295) {
           if (lastAppliedDir != 3) snakeDir = 1;
+        }
+        else if (x >= 120 && x <= 140 && y >= 300 && y <= 320) {
+          static uint32_t lastSpeedDec = 0;
+          if (HAL_GetTick() - lastSpeedDec > 150) {
+            if (gameSpeed < 500) gameSpeed += 10;
+            lastSpeedDec = HAL_GetTick();
+          }
+        }
+        else if (x >= 140 && x <= 160 && y >= 300 && y <= 320) {
+          static uint32_t lastSpeedInc = 0;
+          if (HAL_GetTick() - lastSpeedInc > 150) {
+            if (gameSpeed > 20) gameSpeed -= 10;
+            lastSpeedInc = HAL_GetTick();
+          }
         }
       }
       // Joystick direction (Up/Right/Down/Left), blocked from reversing onto the
@@ -978,6 +1032,14 @@ void StartInputTask(void const * argument)
           osMutexWait(gameMutexHandle, osWaitForever);
           gameStatus = 4;
           osMutexRelease(gameMutexHandle);
+        }
+        // Touch on COLOR text
+        else if (x >= 40 && x <= 200 && y >= 155 && y <= 175)
+        {
+          osMutexWait(gameMutexHandle, osWaitForever);
+          currentColorIdx = (currentColorIdx + 1) % COLOR_COUNT;
+          osMutexRelease(gameMutexHandle);
+          osDelay(200);
         }
       }
       // Joystick Left/Right cycles map, Up/Down cycles difficulty, button (PA0) starts the game
