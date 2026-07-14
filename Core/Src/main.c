@@ -30,6 +30,11 @@
 #define MAX_GAME_Y 24
 #define FRAME_BUFFER_ADDR ((uint32_t)0xD0000000)
 
+#define PORTAL1_X 5
+#define PORTAL1_Y 12
+#define PORTAL2_X 18
+#define PORTAL2_Y 12
+
 /* Color definitions (RGB565) */
 #define COLOR_BLACK   0x0000
 #define COLOR_WHITE   0xFFFF
@@ -271,6 +276,11 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
       return 1;
     }
   }
+  else if (map_id == 6) // Map 6: Portals
+  {
+    // No wall obstacles in the middle
+    return 0;
+  }
   return 0;
 }
 
@@ -293,6 +303,15 @@ void drawMap(uint8_t map_id)
         }
       }
     }
+  }
+  
+  if (map_id == 6) {
+    // Draw portals
+    LCD_FillRect(PORTAL1_X * PIXEL_SIZE, PORTAL1_Y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_PINK);
+    LCD_FillRect(PORTAL2_X * PIXEL_SIZE, PORTAL2_Y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_PINK);
+    // Draw a hollow center to make it look like a portal
+    LCD_FillRect(PORTAL1_X * PIXEL_SIZE + 2, PORTAL1_Y * PIXEL_SIZE + 2, PIXEL_SIZE - 4, PIXEL_SIZE - 4, COLOR_BLACK);
+    LCD_FillRect(PORTAL2_X * PIXEL_SIZE + 2, PORTAL2_Y * PIXEL_SIZE + 2, PIXEL_SIZE - 4, PIXEL_SIZE - 4, COLOR_BLACK);
   }
 }
 
@@ -532,6 +551,12 @@ void spawnFoodAt(int slot)
     if (flag && isObstacle(ranX, ranY, currentMap)) {
       flag = 0;
     }
+    if (flag && currentMap == 6) {
+      if ((ranX == PORTAL1_X && ranY == PORTAL1_Y) ||
+          (ranX == PORTAL2_X && ranY == PORTAL2_Y)) {
+        flag = 0;
+      }
+    }
     if (flag) {
       for (int f = 0; f < MAX_FOOD; f++) {
         if (f != slot && foodActive[f] && foodX[f] == ranX && foodY[f] == ranY) {
@@ -567,6 +592,16 @@ void moveSnake(void)
   else if (snakeDir == 2) snakeY[0] = (snakeY[0] + 1) % MAX_GAME_Y;
   else if (snakeDir == 3) snakeX[0] = (snakeX[0] - 1 + MAX_GAME_X) % MAX_GAME_X;
   lastAppliedDir = snakeDir; /* direction actually reflected in the body layout */
+
+  if (currentMap == 6) {
+    if (snakeX[0] == PORTAL1_X && snakeY[0] == PORTAL1_Y) {
+      snakeX[0] = PORTAL2_X;
+      snakeY[0] = PORTAL2_Y;
+    } else if (snakeX[0] == PORTAL2_X && snakeY[0] == PORTAL2_Y) {
+      snakeX[0] = PORTAL1_X;
+      snakeY[0] = PORTAL1_Y;
+    }
+  }
 }
 
 void resetGame(void)
@@ -997,7 +1032,7 @@ void StartInputTask(void const * argument)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
           currentMap--;
-          if (currentMap < 1) currentMap = 5;
+          if (currentMap < 1) currentMap = 6;
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
@@ -1006,7 +1041,7 @@ void StartInputTask(void const * argument)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
           currentMap++;
-          if (currentMap > 5) currentMap = 1;
+          if (currentMap > 6) currentMap = 1;
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
@@ -1047,7 +1082,7 @@ void StartInputTask(void const * argument)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
         currentMap--;
-        if (currentMap < 1) currentMap = 5;
+        if (currentMap < 1) currentMap = 6;
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
@@ -1055,7 +1090,7 @@ void StartInputTask(void const * argument)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
         currentMap++;
-        if (currentMap > 5) currentMap = 1;
+        if (currentMap > 6) currentMap = 1;
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
