@@ -45,6 +45,14 @@ LTDC_HandleTypeDef hltdc;
 SPI_HandleTypeDef hspi5;
 SDRAM_HandleTypeDef hsdram1;
 TIM_HandleTypeDef htim6;
+ADC_HandleTypeDef hadc1; /* Joystick Y axis: PC3 */
+ADC_HandleTypeDef hadc2; /* Joystick X axis: PA5 */
+
+/* Joystick calibration (re-captured every time the Menu is entered) */
+#define JOY_DEADZONE 700
+static uint16_t joyXCenter = 2048;
+static uint16_t joyYCenter = 2048;
+volatile uint8_t requestJoyRecalibrate = 0;
 
 /* Game state */
 volatile int gameSpeed = 150;
@@ -83,7 +91,14 @@ static void MX_I2C3_Init(void);
 static void MX_SPI5_Init(void);
 static void MX_FMC_Init(void);
 static void MX_LTDC_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_ADC2_Init(void);
 static void BSP_SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_SDRAM_CommandTypeDef *Command);
+
+/* Joystick helpers */
+static uint16_t ADC_ReadChannel(ADC_HandleTypeDef *hadc);
+static void JoystickCalibrateCenter(void);
+static int ReadJoystickDirection(void);
 
 uint8_t BSP_TS_Init(uint16_t XSize, uint16_t YSize);
 void    BSP_TS_GetState(TS_StateTypeDef* TsState);
@@ -442,6 +457,9 @@ int main(void)
   MX_I2C3_Init();
   MX_SPI5_Init();
   MX_FMC_Init();
+  MX_ADC1_Init();
+  MX_ADC2_Init();
+  JoystickCalibrateCenter();
 
   /* Initialize SDRAM */
   FMC_SDRAM_CommandTypeDef command;
@@ -536,6 +554,7 @@ void StartDisplayTask(void const * argument)
         drawMenuScreen();
         drawControlPanel();
         lastMap = currentMap;
+        requestJoyRecalibrate = 1; /* re-center joystick fresh each time Menu is shown */
       }
       else if (currentStatus == 2) // Game Over
       {
@@ -602,8 +621,16 @@ void StartDisplayTask(void const * argument)
 
 void StartInputTask(void const * argument)
 {
+  uint8_t lastButtonState = 0;
+
   for(;;)
   {
+    if (requestJoyRecalibrate)
+    {
+      requestJoyRecalibrate = 0;
+      JoystickCalibrateCenter();
+    }
+
     BSP_TS_GetState(&TS_State);
     uint8_t inputDetected = 0;
     uint16_t x = 0, y = 0;
@@ -612,6 +639,11 @@ void StartInputTask(void const * argument)
       y = TS_State.Y;
       inputDetected = 1;
     }
+
+    int joyDir = ReadJoystickDirection();
+    uint8_t buttonState = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET);
+    uint8_t buttonPressed = (buttonState && !lastButtonState); /* rising edge */
+    lastButtonState = buttonState;
 
     if (gameStatus == 1) // Playing state
     {
@@ -631,6 +663,11 @@ void StartInputTask(void const * argument)
           if (snakeDir != 3) snakeDir = 1;
         }
       }
+      // Joystick direction (Up/Right/Down/Left), blocked from reversing onto itself
+      if (joyDir == 0 && snakeDir != 2) snakeDir = 0;
+      else if (joyDir == 1 && snakeDir != 3) snakeDir = 1;
+      else if (joyDir == 2 && snakeDir != 0) snakeDir = 2;
+      else if (joyDir == 3 && snakeDir != 1) snakeDir = 3;
       osMutexRelease(gameMutexHandle);
     }
     else if (gameStatus == 0) // Menu state
@@ -664,6 +701,30 @@ void StartInputTask(void const * argument)
           osDelay(200);
         }
       }
+      // Joystick Left/Right cycles map, button (PA0) starts the game
+      if (joyDir == 3)
+      {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        currentMap--;
+        if (currentMap < 1) currentMap = 5;
+        osMutexRelease(gameMutexHandle);
+        osDelay(200);
+      }
+      else if (joyDir == 1)
+      {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        currentMap++;
+        if (currentMap > 5) currentMap = 1;
+        osMutexRelease(gameMutexHandle);
+        osDelay(200);
+      }
+      else if (buttonPressed)
+      {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        resetGame();
+        gameStatus = 1;
+        osMutexRelease(gameMutexHandle);
+      }
     }
     else if (gameStatus == 2) // Game Over state
     {
@@ -677,6 +738,14 @@ void StartInputTask(void const * argument)
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
+      }
+      // Joystick button (PA0) returns to menu
+      if (buttonPressed)
+      {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        gameStatus = 0;
+        osMutexRelease(gameMutexHandle);
+        osDelay(200);
       }
     }
     osDelay(20);
@@ -786,6 +855,64 @@ static void MX_LTDC_Init(void)
   LcdDrv = &ili9341_drv;
   LcdDrv->Init();
   LcdDrv->DisplayOn();
+}
+
+static void MX_ADC1_Init(void)
+{
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc1.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc1.Init.ScanConvMode = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DMAContinuousRequests = DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_13; /* PC3 -> joystick Y (VRy) */
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+static void MX_ADC2_Init(void)
+{
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  hadc2.Instance = ADC2;
+  hadc2.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV4;
+  hadc2.Init.Resolution = ADC_RESOLUTION_12B;
+  hadc2.Init.ScanConvMode = DISABLE;
+  hadc2.Init.ContinuousConvMode = DISABLE;
+  hadc2.Init.DiscontinuousConvMode = DISABLE;
+  hadc2.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc2.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc2.Init.NbrOfConversion = 1;
+  hadc2.Init.DMAContinuousRequests = DISABLE;
+  hadc2.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  sConfig.Channel = ADC_CHANNEL_5; /* PA5 -> joystick X (VRx) */
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
 static void MX_FMC_Init(void)
@@ -915,6 +1042,40 @@ void BSP_TS_GetState(TS_StateTypeDef* TsState)
   }
 }
 
+/* ---------- Joystick (analog VRx/VRy + onboard PA0 button) ---------- */
+static uint16_t ADC_ReadChannel(ADC_HandleTypeDef *hadc)
+{
+  uint16_t value = 0;
+  HAL_ADC_Start(hadc);
+  if (HAL_ADC_PollForConversion(hadc, 10) == HAL_OK)
+  {
+    value = (uint16_t)HAL_ADC_GetValue(hadc);
+  }
+  HAL_ADC_Stop(hadc);
+  return value;
+}
+
+/* Capture the resting (centered) stick position so mechanical offset
+   between units doesn't bias direction detection. */
+static void JoystickCalibrateCenter(void)
+{
+  joyXCenter = ADC_ReadChannel(&hadc2);
+  joyYCenter = ADC_ReadChannel(&hadc1);
+}
+
+/* Returns 0:Up, 1:Right, 2:Down, 3:Left, -1:Neutral (within deadzone) */
+static int ReadJoystickDirection(void)
+{
+  int16_t dx = (int16_t)ADC_ReadChannel(&hadc2) - (int16_t)joyXCenter;
+  int16_t dy = (int16_t)ADC_ReadChannel(&hadc1) - (int16_t)joyYCenter;
+
+  if (dx > JOY_DEADZONE)       return 1; /* Right */
+  else if (dx < -JOY_DEADZONE) return 3; /* Left  */
+  else if (dy > JOY_DEADZONE)  return 2; /* Down  */
+  else if (dy < -JOY_DEADZONE) return 0; /* Up    */
+  return -1;
+}
+
 static void MX_GPIO_Init(void)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
@@ -944,6 +1105,15 @@ static void MX_GPIO_Init(void)
   /* LED (PG14) */
   GPIO_InitStruct.Pin = GPIO_PIN_14;
   HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+
+  /* Joystick VRx (PA5)/VRy (PC3) analog GPIO is configured by HAL_ADC_MspInit()
+     (auto-generated in stm32f4xx_hal_msp.c) when MX_ADC1_Init/MX_ADC2_Init run. */
+
+  /* Joystick Select button - reuse onboard User button (PA0) */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 }
 
 void Error_Handler(void)
