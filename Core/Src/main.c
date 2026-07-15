@@ -118,9 +118,32 @@ volatile int speedBoostTicks = 0;
 #define SPEED_BOOST_FACTOR_NUM 7
 #define SPEED_BOOST_FACTOR_DEN 10
 
+/* Bare 5V active buzzer driven through an external NPN transistor on PA2.
+   PA2 HIGH turns the transistor (and buzzer) on; PA2 LOW turns it off.
+   Do not connect the 5V buzzer directly to the STM32 GPIO. */
+#define BUZZER_GPIO_PORT     GPIOA
+#define BUZZER_GPIO_PIN      GPIO_PIN_2
+#define BUZZER_ACTIVE_STATE  GPIO_PIN_SET
+#define BUZZER_IDLE_STATE    GPIO_PIN_RESET
+
+typedef enum {
+  SOUND_NONE = 0,
+  SOUND_SELECT,
+  SOUND_EAT,
+  SOUND_BONUS,
+  SOUND_SPEED_BOOST,
+  SOUND_SHRINK,
+  SOUND_PAUSE,
+  SOUND_GAME_OVER,
+  SOUND_HIGH_SCORE
+} SoundEvent;
+
+static volatile SoundEvent pendingSound = SOUND_NONE;
+
 osThreadId gameTaskHandle;
 osThreadId displayTaskHandle;
 osThreadId inputTaskHandle;
+osThreadId soundTaskHandle;
 osMutexId gameMutexHandle;
 
 typedef struct {
@@ -162,6 +185,8 @@ void    BSP_TS_GetState(TS_StateTypeDef* TsState);
 void StartGameTask(void const * argument);
 void StartDisplayTask(void const * argument);
 void StartInputTask(void const * argument);
+void StartSoundTask(void const * argument);
+static void Sound_Play(SoundEvent event);
 
 /* ---------- Direct framebuffer drawing helpers (RGB565) ---------- */
 static inline void LCD_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
@@ -696,6 +721,9 @@ int main(void)
   osThreadDef(inputTask, StartInputTask, osPriorityAboveNormal, 0, 512);
   inputTaskHandle = osThreadCreate(osThread(inputTask), NULL);
 
+  osThreadDef(soundTask, StartSoundTask, osPriorityBelowNormal, 0, 256);
+  soundTaskHandle = osThreadCreate(osThread(soundTask), NULL);
+
   osKernelStart();
 
   while (1) {}
@@ -741,24 +769,29 @@ void StartGameTask(void const * argument)
         int collision = checkCollision();
         uint8_t needSave = 0;
         if (collision == 0) {
+          uint8_t achievedHighScore = highScoreDirty;
           gameStatus = 2; /* Game over */
           if (highScoreDirty) { needSave = 1; highScoreDirty = 0; }
+          Sound_Play(achievedHighScore ? SOUND_HIGH_SCORE : SOUND_GAME_OVER);
         } else if (collision == 2) {
           int slot = lastEatenFoodSlot;
           int eatenType = foodType[slot];
           switch (eatenType) {
             case 1: /* bonus */
+              Sound_Play(SOUND_BONUS);
               score += 5;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
               snakeLength++;
               break;
             case 2: /* speed boost */
+              Sound_Play(SOUND_SPEED_BOOST);
               score++;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
               snakeLength++;
               speedBoostTicks = SPEED_BOOST_DURATION_TICKS;
               break;
             case 3: /* shrink */
+              Sound_Play(SOUND_SHRINK);
               score++;
               {
                 int newLen = snakeLength - 2;
@@ -771,6 +804,7 @@ void StartGameTask(void const * argument)
               }
               break;
             default: /* normal */
+              Sound_Play(SOUND_EAT);
               score++;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
               snakeLength++;
@@ -1003,6 +1037,7 @@ void StartInputTask(void const * argument)
       else if (joyDir == 3 && lastAppliedDir != 1) snakeDir = 3;
       if (buttonPressed) gameStatus = 3; /* Pause */
       osMutexRelease(gameMutexHandle);
+      if (buttonPressed) Sound_Play(SOUND_PAUSE);
       if (buttonPressed) osDelay(200);
     }
     else if (gameStatus == 3) // Paused state
@@ -1012,6 +1047,7 @@ void StartInputTask(void const * argument)
         osMutexWait(gameMutexHandle, osWaitForever);
         gameStatus = 1; /* Resume */
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
     }
@@ -1026,6 +1062,7 @@ void StartInputTask(void const * argument)
           resetGame();
           gameStatus = 1;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
         }
         // Touch on D-pad LEFT to cycle map down
         else if (x >= 10 && x <= 38 && y >= 265 && y <= 295)
@@ -1034,6 +1071,7 @@ void StartInputTask(void const * argument)
           currentMap--;
           if (currentMap < 1) currentMap = 6;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
           osDelay(200);
         }
         // Touch on D-pad RIGHT to cycle map up
@@ -1043,13 +1081,17 @@ void StartInputTask(void const * argument)
           currentMap++;
           if (currentMap > 6) currentMap = 1;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
           osDelay(200);
         }
         // Touch on D-pad UP to increase difficulty
         else if (x >= 35 && x <= 75 && y >= 240 && y <= 268)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
-          if (difficulty < DIFF_COUNT - 1) difficulty++;
+          if (difficulty < DIFF_COUNT - 1) {
+            difficulty++;
+            Sound_Play(SOUND_SELECT);
+          }
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
@@ -1057,7 +1099,10 @@ void StartInputTask(void const * argument)
         else if (x >= 35 && x <= 75 && y >= 292 && y <= 320)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
-          if (difficulty > 0) difficulty--;
+          if (difficulty > 0) {
+            difficulty--;
+            Sound_Play(SOUND_SELECT);
+          }
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
@@ -1067,6 +1112,7 @@ void StartInputTask(void const * argument)
           osMutexWait(gameMutexHandle, osWaitForever);
           gameStatus = 4;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
         }
         // Touch on COLOR text
         else if (x >= 40 && x <= 200 && y >= 155 && y <= 175)
@@ -1084,6 +1130,7 @@ void StartInputTask(void const * argument)
         currentMap--;
         if (currentMap < 1) currentMap = 6;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
       else if (joyDir == 1)
@@ -1092,19 +1139,26 @@ void StartInputTask(void const * argument)
         currentMap++;
         if (currentMap > 6) currentMap = 1;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
       else if (joyDir == 0)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
-        if (difficulty < DIFF_COUNT - 1) difficulty++;
+        if (difficulty < DIFF_COUNT - 1) {
+          difficulty++;
+          Sound_Play(SOUND_SELECT);
+        }
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
       else if (joyDir == 2)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
-        if (difficulty > 0) difficulty--;
+        if (difficulty > 0) {
+          difficulty--;
+          Sound_Play(SOUND_SELECT);
+        }
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
@@ -1114,6 +1168,7 @@ void StartInputTask(void const * argument)
         resetGame();
         gameStatus = 1;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
       }
     }
     else if (gameStatus == 2) // Game Over state
@@ -1126,6 +1181,7 @@ void StartInputTask(void const * argument)
           osMutexWait(gameMutexHandle, osWaitForever);
           gameStatus = 0;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
           osDelay(200);
         }
       }
@@ -1135,6 +1191,7 @@ void StartInputTask(void const * argument)
         osMutexWait(gameMutexHandle, osWaitForever);
         gameStatus = 0;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
     }
@@ -1146,10 +1203,82 @@ void StartInputTask(void const * argument)
         osMutexWait(gameMutexHandle, osWaitForever);
         gameStatus = 0;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
     }
     osDelay(20);
+  }
+}
+
+/* ---------- Non-blocking sound service for an active buzzer ---------- */
+static void Sound_Play(SoundEvent event)
+{
+  /* A newer event replaces one that has not started yet. The sound task owns
+     all delays, so game/input/display tasks are never blocked by a beep. */
+  pendingSound = event;
+}
+
+static void Buzzer_Pulse(uint32_t onMs, uint32_t offMs)
+{
+  HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_ACTIVE_STATE);
+  osDelay(onMs);
+  HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
+  if (offMs > 0) osDelay(offMs);
+}
+
+void StartSoundTask(void const * argument)
+{
+  HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
+
+  for (;;) {
+    taskENTER_CRITICAL();
+    SoundEvent event = pendingSound;
+    pendingSound = SOUND_NONE;
+    taskEXIT_CRITICAL();
+
+    if (event == SOUND_NONE) {
+      osDelay(10);
+      continue;
+    }
+
+    switch (event) {
+      case SOUND_SELECT:
+        Buzzer_Pulse(35, 0);
+        break;
+      case SOUND_EAT:
+        Buzzer_Pulse(60, 0);
+        break;
+      case SOUND_BONUS:
+        Buzzer_Pulse(55, 45);
+        Buzzer_Pulse(55, 0);
+        break;
+      case SOUND_SPEED_BOOST:
+        Buzzer_Pulse(35, 25);
+        Buzzer_Pulse(35, 25);
+        Buzzer_Pulse(80, 0);
+        break;
+      case SOUND_SHRINK:
+        Buzzer_Pulse(160, 0);
+        break;
+      case SOUND_PAUSE:
+        Buzzer_Pulse(90, 60);
+        Buzzer_Pulse(90, 0);
+        break;
+      case SOUND_GAME_OVER:
+        Buzzer_Pulse(180, 100);
+        Buzzer_Pulse(180, 100);
+        Buzzer_Pulse(450, 0);
+        break;
+      case SOUND_HIGH_SCORE:
+        Buzzer_Pulse(60, 45);
+        Buzzer_Pulse(60, 45);
+        Buzzer_Pulse(60, 45);
+        Buzzer_Pulse(300, 0);
+        break;
+      default:
+        break;
+    }
   }
 }
 
@@ -1553,6 +1682,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* PA2 drives the base resistor of an external NPN buzzer transistor.
+     Keep it low at startup so the buzzer remains off. */
+  HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
+  GPIO_InitStruct.Pin = BUZZER_GPIO_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(BUZZER_GPIO_PORT, &GPIO_InitStruct);
 }
 
 void Error_Handler(void)
