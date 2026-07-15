@@ -41,6 +41,12 @@
 #define COLOR_RED     0xF800
 #define COLOR_GREEN   0x07E0
 #define COLOR_YELLOW  0xFFE0
+#define COLOR_BLUE    0x001F
+#define COLOR_CYAN    0x07FF
+#define COLOR_PINK    0xF81F
+#define COLOR_ORANGE  0xFD20
+#define COLOR_GRAY    0x5AEB
+#define COLOR_DARKGRAY 0x18C3
 
 #define TS_I2C_ADDRESS 0x82
 
@@ -104,7 +110,6 @@ static const char * const difficultyNames[DIFF_COUNT] = {"EASY  ", "NORMAL", "HA
 volatile int difficulty = 1; /* 0:Easy, 1:Normal, 2:Hard */
 
 #define COLOR_COUNT 5
-#define COLOR_PINK 0xF81F
 static const uint16_t snakeColors[COLOR_COUNT] = {COLOR_GREEN, COLOR_RED, COLOR_BLUE, COLOR_PINK, COLOR_WHITE};
 static const char * const snakeColorNames[COLOR_COUNT] = {"GREEN", "RED  ", "BLUE ", "PINK ", "WHITE"};
 volatile int currentColorIdx = 0;
@@ -183,12 +188,6 @@ static void LCD_Clear(uint16_t color)
   for (uint32_t i = 0; i < LCD_W * LCD_H; i++)
     fb[i] = color;
 }
-
-#define COLOR_GRAY      0x5AEB
-#define COLOR_DARKGRAY  0x18C3
-#define COLOR_BLUE      0x001F
-#define COLOR_CYAN      0x07FF
-#define COLOR_ORANGE    0xFD20
 
 void LCD_DrawChar(uint16_t x, uint16_t y, char c, sFONT *font, uint16_t color, uint16_t bg_color)
 {
