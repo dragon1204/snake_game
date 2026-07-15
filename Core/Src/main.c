@@ -107,12 +107,13 @@ volatile int speedBoostTicks = 0;
 #define SPEED_BOOST_FACTOR_NUM 7
 #define SPEED_BOOST_FACTOR_DEN 10
 
-/* Active buzzer module on PA2. Most 3-pin modules are active-low; change
-   BUZZER_ACTIVE_STATE to GPIO_PIN_SET if yours is active-high. */
+/* Bare 5V active buzzer driven through an external NPN transistor on PA2.
+   PA2 HIGH turns the transistor (and buzzer) on; PA2 LOW turns it off.
+   Do not connect the 5V buzzer directly to the STM32 GPIO. */
 #define BUZZER_GPIO_PORT     GPIOA
 #define BUZZER_GPIO_PIN      GPIO_PIN_2
-#define BUZZER_ACTIVE_STATE  GPIO_PIN_RESET
-#define BUZZER_IDLE_STATE    GPIO_PIN_SET
+#define BUZZER_ACTIVE_STATE  GPIO_PIN_SET
+#define BUZZER_IDLE_STATE    GPIO_PIN_RESET
 
 typedef enum {
   SOUND_NONE = 0,
@@ -1582,7 +1583,8 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* External active buzzer signal (PA2), idle high for active-low module. */
+  /* PA2 drives the base resistor of an external NPN buzzer transistor.
+     Keep it low at startup so the buzzer remains off. */
   HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
   GPIO_InitStruct.Pin = BUZZER_GPIO_PIN;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
