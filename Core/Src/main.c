@@ -1135,12 +1135,15 @@ void StartSoundTask(void const * argument)
   HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
 
   for (;;) {
+    taskENTER_CRITICAL();
     SoundEvent event = pendingSound;
+    pendingSound = SOUND_NONE;
+    taskEXIT_CRITICAL();
+
     if (event == SOUND_NONE) {
       osDelay(10);
       continue;
     }
-    pendingSound = SOUND_NONE;
 
     switch (event) {
       case SOUND_SELECT:
