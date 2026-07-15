@@ -124,11 +124,11 @@ volatile int speedBoostTicks = 0;
 #define SPEED_BOOST_FACTOR_NUM 7
 #define SPEED_BOOST_FACTOR_DEN 10
 
-/* Bare 5V active buzzer driven through an external NPN transistor on PA2.
-   PA2 HIGH turns the transistor (and buzzer) on; PA2 LOW turns it off.
+/* Bare 5V active buzzer driven through an external NPN transistor on PC4.
+   PC4 HIGH turns the transistor (and buzzer) on; PC4 LOW turns it off.
    Do not connect the 5V buzzer directly to the STM32 GPIO. */
-#define BUZZER_GPIO_PORT     GPIOA
-#define BUZZER_GPIO_PIN      GPIO_PIN_2
+#define BUZZER_GPIO_PORT     GPIOC
+#define BUZZER_GPIO_PIN      GPIO_PIN_4
 #define BUZZER_ACTIVE_STATE  GPIO_PIN_SET
 #define BUZZER_IDLE_STATE    GPIO_PIN_RESET
 
@@ -143,7 +143,9 @@ typedef enum {
   SOUND_COUNTDOWN,
   SOUND_GO,
   SOUND_GAME_OVER,
-  SOUND_HIGH_SCORE
+  SOUND_HIGH_SCORE,
+  SOUND_STARTUP,
+  SOUND_PORTAL
 } SoundEvent;
 
 static volatile SoundEvent pendingSound = SOUND_NONE;
@@ -388,44 +390,39 @@ void drawControlPanel(void)
   LCD_DrawString(125, 288, "MAP  :", &Font12, COLOR_GREEN, COLOR_DARKGRAY);
   LCD_DrawString(180, 288, mapBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
   
-  // SPEED buttons
-  LCD_FillRect(125, 303, 15, 15, COLOR_GRAY);
-  LCD_DrawString(129, 305, "-", &Font12, COLOR_WHITE, COLOR_GRAY);
-  LCD_FillRect(145, 303, 15, 15, COLOR_GRAY);
-  LCD_DrawString(148, 305, "+", &Font12, COLOR_WHITE, COLOR_GRAY);
   char spdBuf[8];
   sprintf(spdBuf, "%d", gameSpeed);
-  LCD_DrawString(165, 305, "SPD:", &Font12, COLOR_CYAN, COLOR_DARKGRAY);
-  LCD_DrawString(195, 305, spdBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
+  LCD_DrawString(125, 305, "SPEED:", &Font12, COLOR_CYAN, COLOR_DARKGRAY);
+  LCD_DrawString(180, 305, spdBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
 }
 
 void drawMenuScreen(void)
 {
   LCD_FillRect(0, 0, 240, 240, COLOR_BLACK);
   
-  LCD_DrawString(40, 50, "SNAKE GAME", &Font24, COLOR_YELLOW, COLOR_BLACK);
-  LCD_DrawString(65, 105, "SELECT MAP", &Font16, COLOR_WHITE, COLOR_BLACK);
+  LCD_DrawString(40, 25, "SNAKE GAME", &Font24, COLOR_YELLOW, COLOR_BLACK);
+  LCD_DrawString(65, 70, "SELECT MAP", &Font16, COLOR_WHITE, COLOR_BLACK);
   
   char mapBuf[16];
   sprintf(mapBuf, "< MAP %d >", currentMap);
-  LCD_DrawString(70, 130, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
+  LCD_DrawString(70, 95, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
 
   char diffBuf[24];
   sprintf(diffBuf, "SPEED: %s", difficultyNames[difficulty]);
-  LCD_DrawString(60, 150, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
+  LCD_DrawString(60, 125, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
 
   char colBuf[24];
   sprintf(colBuf, "COLOR: %s", snakeColorNames[currentColorIdx]);
-  LCD_DrawString(60, 162, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
+  LCD_DrawString(60, 142, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
 
-  // New game button: X: 15-110, Y: 175-202
-  LCD_FillRect(15, 175, 95, 27, COLOR_CYAN);
-  LCD_DrawString(35, 181, "START", &Font16, COLOR_BLACK, COLOR_CYAN);
+  // New game button: X: 15-110, Y: 170-197
+  LCD_FillRect(15, 170, 95, 27, COLOR_CYAN);
+  LCD_DrawString(35, 176, "START", &Font16, COLOR_BLACK, COLOR_CYAN);
 
   // Continue button is enabled only when a valid paused game exists in Flash.
   uint16_t continueColor = savedGameAvailable ? COLOR_GREEN : COLOR_DARKGRAY;
-  LCD_FillRect(130, 175, 95, 27, continueColor);
-  LCD_DrawString(134, 181, "CONTINUE", &Font16,
+  LCD_FillRect(130, 170, 95, 27, continueColor);
+  LCD_DrawString(134, 176, "CONTINUE", &Font16,
                  savedGameAvailable ? COLOR_BLACK : COLOR_GRAY, continueColor);
 
   // Help Button: X: 70-170, Y: 210-235
@@ -641,9 +638,11 @@ void moveSnake(void)
     if (snakeX[0] == PORTAL1_X && snakeY[0] == PORTAL1_Y) {
       snakeX[0] = PORTAL2_X;
       snakeY[0] = PORTAL2_Y;
+      Sound_Play(SOUND_PORTAL);
     } else if (snakeX[0] == PORTAL2_X && snakeY[0] == PORTAL2_Y) {
       snakeX[0] = PORTAL1_X;
       snakeY[0] = PORTAL1_Y;
+      Sound_Play(SOUND_PORTAL);
     }
   }
 }
@@ -760,6 +759,7 @@ int main(void)
 void StartGameTask(void const * argument)
 {
   uint32_t lastTick = osKernelSysTick();
+  Sound_Play(SOUND_STARTUP);
   for(;;)
   {
     HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_14); /* Toggle Red LED for alive status */
@@ -985,7 +985,7 @@ void StartDisplayTask(void const * argument)
         lastGameSpeed = gameSpeed;
         char spdBuf[8];
         sprintf(spdBuf, "%-3d", gameSpeed); // pad with spaces in case it goes from 100 to 90
-        LCD_DrawString(195, 305, spdBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
+        LCD_DrawString(180, 305, spdBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
       }
       
       osMutexRelease(gameMutexHandle);
@@ -1005,7 +1005,7 @@ void StartDisplayTask(void const * argument)
         lastMap = currentMap;
         char mapBuf[16];
         sprintf(mapBuf, "< MAP %d >", currentMap);
-        LCD_DrawString(70, 130, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
+        LCD_DrawString(70, 95, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
         
         // Also update control panel map number
         sprintf(mapBuf, "%02d", currentMap);
@@ -1016,14 +1016,14 @@ void StartDisplayTask(void const * argument)
         lastDifficulty = difficulty;
         char diffBuf[24];
         sprintf(diffBuf, "SPEED: %s", difficultyNames[difficulty]);
-        LCD_DrawString(60, 150, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
+        LCD_DrawString(60, 125, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
       }
       if (currentColorIdx != lastColorIdx)
       {
         lastColorIdx = currentColorIdx;
         char colBuf[24];
         sprintf(colBuf, "COLOR: %s", snakeColorNames[currentColorIdx]);
-        LCD_DrawString(60, 162, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
+        LCD_DrawString(60, 142, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
       }
     }
     
@@ -1074,20 +1074,6 @@ void StartInputTask(void const * argument)
         else if (x >= 72 && x <= 100 && y >= 265 && y <= 295) {
           if (lastAppliedDir != 3) snakeDir = 1;
         }
-        else if (x >= 120 && x <= 140 && y >= 300 && y <= 320) {
-          static uint32_t lastSpeedDec = 0;
-          if (HAL_GetTick() - lastSpeedDec > 150) {
-            if (gameSpeed < 500) gameSpeed += 10;
-            lastSpeedDec = HAL_GetTick();
-          }
-        }
-        else if (x >= 140 && x <= 160 && y >= 300 && y <= 320) {
-          static uint32_t lastSpeedInc = 0;
-          if (HAL_GetTick() - lastSpeedInc > 150) {
-            if (gameSpeed > 20) gameSpeed -= 10;
-            lastSpeedInc = HAL_GetTick();
-          }
-        }
       }
       // Joystick direction (Up/Right/Down/Left), blocked from reversing onto the
       // snake's actual current heading (not the possibly-already-changed snakeDir,
@@ -1123,7 +1109,7 @@ void StartInputTask(void const * argument)
       if (inputDetected)
       {
         // Touch on START button: discard an older save and start fresh.
-        if (x >= 15 && x <= 110 && y >= 175 && y <= 202)
+        if (x >= 15 && x <= 110 && y >= 170 && y <= 197)
         {
           Flash_ClearSavedGame();
           osMutexWait(gameMutexHandle, osWaitForever);
@@ -1132,7 +1118,7 @@ void StartInputTask(void const * argument)
           osMutexRelease(gameMutexHandle);
         }
         // Touch on CONTINUE button: restore the paused game from Flash.
-        else if (x >= 130 && x <= 225 && y >= 175 && y <= 202 && savedGameAvailable)
+        else if (x >= 130 && x <= 225 && y >= 170 && y <= 197 && savedGameAvailable)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
           if (Flash_RestoreSavedGame()) BeginCountdown();
@@ -1187,9 +1173,16 @@ void StartInputTask(void const * argument)
           gameStatus = 4;
           osMutexRelease(gameMutexHandle);
           Sound_Play(SOUND_SELECT);
+          // Wait for user to release touch so the help screen doesn't instantly close
+          while (1)
+          {
+            BSP_TS_GetState(&TS_State);
+            if (!TS_State.TouchDetected) break;
+            osDelay(20);
+          }
         }
         // Touch on COLOR text
-        else if (x >= 40 && x <= 200 && y >= 155 && y <= 175)
+        else if (x >= 40 && x <= 200 && y >= 130 && y <= 160)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
           currentColorIdx = (currentColorIdx + 1) % COLOR_COUNT;
@@ -1256,6 +1249,13 @@ void StartInputTask(void const * argument)
           gameStatus = 0;
           osMutexRelease(gameMutexHandle);
           Sound_Play(SOUND_SELECT);
+          // Wait for user to release touch so they don't immediately trigger START/CONTINUE on the Menu screen
+          while (1)
+          {
+            BSP_TS_GetState(&TS_State);
+            if (!TS_State.TouchDetected) break;
+            osDelay(20);
+          }
           osDelay(200);
         }
       }
@@ -1278,6 +1278,16 @@ void StartInputTask(void const * argument)
         gameStatus = 0;
         osMutexRelease(gameMutexHandle);
         Sound_Play(SOUND_SELECT);
+        // Wait for user to release touch if exiting via tap
+        if (inputDetected)
+        {
+          while (1)
+          {
+            BSP_TS_GetState(&TS_State);
+            if (!TS_State.TouchDetected) break;
+            osDelay(20);
+          }
+        }
         osDelay(200);
       }
     }
@@ -1343,7 +1353,7 @@ void StartSoundTask(void const * argument)
         Buzzer_Pulse(70, 0);
         break;
       case SOUND_GO:
-        Buzzer_Pulse(180, 0);
+        Buzzer_Pulse(500, 0);
         break;
       case SOUND_GAME_OVER:
         Buzzer_Pulse(180, 100);
@@ -1355,6 +1365,15 @@ void StartSoundTask(void const * argument)
         Buzzer_Pulse(60, 45);
         Buzzer_Pulse(60, 45);
         Buzzer_Pulse(300, 0);
+        break;
+      case SOUND_STARTUP:
+        Buzzer_Pulse(60, 40);
+        Buzzer_Pulse(60, 40);
+        Buzzer_Pulse(180, 0);
+        break;
+      case SOUND_PORTAL:
+        Buzzer_Pulse(40, 30);
+        Buzzer_Pulse(80, 0);
         break;
       default:
         break;
@@ -1908,7 +1927,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* PA2 drives the base resistor of an external NPN buzzer transistor.
+  /* PC4 drives the base resistor of an external NPN buzzer transistor.
      Keep it low at startup so the buzzer remains off. */
   HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
   GPIO_InitStruct.Pin = BUZZER_GPIO_PIN;
