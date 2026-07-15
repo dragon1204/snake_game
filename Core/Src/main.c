@@ -14,6 +14,7 @@
 #include "stmpe811.h"
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include "../../Utilities/Fonts/fonts.h"
 
 #include "../../Utilities/Fonts/font8.c"
@@ -70,7 +71,7 @@ volatile int gameSpeed = 150;
 volatile int snakeDir = 1;    /* 0:Up, 1:Right, 2:Down, 3:Left (requested; may change more than once per tick) */
 volatile int lastAppliedDir = 1; /* direction actually used by the last moveSnake() - the real heading */
 volatile int snakeLength = 3;
-volatile int gameStatus = 0;  /* 0:Menu, 1:Playing, 2:Game Over, 3:Paused, 4:Help */
+volatile int gameStatus = 0;  /* 0:Menu, 1:Playing, 2:Game Over, 3:Paused, 4:Help, 5:Countdown */
 volatile int currentMap = 1;  /* 1 to 5 */
 volatile int score = 0;
 volatile int highScore = 0;
@@ -123,9 +124,37 @@ volatile int speedBoostTicks = 0;
 #define SPEED_BOOST_FACTOR_NUM 7
 #define SPEED_BOOST_FACTOR_DEN 10
 
+/* Bare 5V active buzzer driven through an external NPN transistor on PA2.
+   PA2 HIGH turns the transistor (and buzzer) on; PA2 LOW turns it off.
+   Do not connect the 5V buzzer directly to the STM32 GPIO. */
+#define BUZZER_GPIO_PORT     GPIOA
+#define BUZZER_GPIO_PIN      GPIO_PIN_2
+#define BUZZER_ACTIVE_STATE  GPIO_PIN_SET
+#define BUZZER_IDLE_STATE    GPIO_PIN_RESET
+
+typedef enum {
+  SOUND_NONE = 0,
+  SOUND_SELECT,
+  SOUND_EAT,
+  SOUND_BONUS,
+  SOUND_SPEED_BOOST,
+  SOUND_SHRINK,
+  SOUND_PAUSE,
+  SOUND_COUNTDOWN,
+  SOUND_GO,
+  SOUND_GAME_OVER,
+  SOUND_HIGH_SCORE
+} SoundEvent;
+
+static volatile SoundEvent pendingSound = SOUND_NONE;
+static volatile int countdownValue = 0;
+static volatile uint32_t countdownNextTick = 0;
+static volatile uint8_t savedGameAvailable = 0;
+
 osThreadId gameTaskHandle;
 osThreadId displayTaskHandle;
 osThreadId inputTaskHandle;
+osThreadId soundTaskHandle;
 osMutexId gameMutexHandle;
 
 typedef struct {
@@ -159,6 +188,10 @@ static int ReadJoystickDirection(void);
 /* High score persistence (internal Flash) */
 static void Flash_LoadHighScore(void);
 static void Flash_SaveHighScore(int value);
+static void Flash_SavePausedGame(void);
+static void Flash_ClearSavedGame(void);
+static uint8_t Flash_RestoreSavedGame(void);
+static void BeginCountdown(void);
 
 uint8_t BSP_TS_Init(uint16_t XSize, uint16_t YSize);
 void    BSP_TS_GetState(TS_StateTypeDef* TsState);
@@ -167,6 +200,8 @@ void    BSP_TS_GetState(TS_StateTypeDef* TsState);
 void StartGameTask(void const * argument);
 void StartDisplayTask(void const * argument);
 void StartInputTask(void const * argument);
+void StartSoundTask(void const * argument);
+static void Sound_Play(SoundEvent event);
 
 /* ---------- Direct framebuffer drawing helpers (RGB565) ---------- */
 static inline void LCD_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
@@ -383,29 +418,27 @@ void drawMenuScreen(void)
   sprintf(colBuf, "COLOR: %s", snakeColorNames[currentColorIdx]);
   LCD_DrawString(60, 162, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
 
-  // Start Button: X: 70-170, Y: 170-200
-  LCD_FillRect(70, 170, 100, 30, COLOR_CYAN);
-  for(int b=0; b<100; b++) {
-    LCD_DrawPixel(70 + b, 170, COLOR_WHITE);
-    LCD_DrawPixel(70 + b, 200, COLOR_WHITE);
-  }
-  for(int b=0; b<30; b++) {
-    LCD_DrawPixel(70, 170 + b, COLOR_WHITE);
-    LCD_DrawPixel(170, 170 + b, COLOR_WHITE);
-  }
-  LCD_DrawString(92, 177, "START", &Font16, COLOR_BLACK, COLOR_CYAN);
+  // New game button: X: 15-110, Y: 175-202
+  LCD_FillRect(15, 175, 95, 27, COLOR_CYAN);
+  LCD_DrawString(35, 181, "START", &Font16, COLOR_BLACK, COLOR_CYAN);
 
-  // Help Button: X: 70-170, Y: 207-232
-  LCD_FillRect(70, 207, 100, 25, COLOR_GRAY);
+  // Continue button is enabled only when a valid paused game exists in Flash.
+  uint16_t continueColor = savedGameAvailable ? COLOR_GREEN : COLOR_DARKGRAY;
+  LCD_FillRect(130, 175, 95, 27, continueColor);
+  LCD_DrawString(134, 181, "CONTINUE", &Font16,
+                 savedGameAvailable ? COLOR_BLACK : COLOR_GRAY, continueColor);
+
+  // Help Button: X: 70-170, Y: 210-235
+  LCD_FillRect(70, 210, 100, 25, COLOR_GRAY);
   for(int b=0; b<100; b++) {
-    LCD_DrawPixel(70 + b, 207, COLOR_WHITE);
-    LCD_DrawPixel(70 + b, 232, COLOR_WHITE);
+    LCD_DrawPixel(70 + b, 210, COLOR_WHITE);
+    LCD_DrawPixel(70 + b, 235, COLOR_WHITE);
   }
   for(int b=0; b<25; b++) {
-    LCD_DrawPixel(70, 207 + b, COLOR_WHITE);
-    LCD_DrawPixel(170, 207 + b, COLOR_WHITE);
+    LCD_DrawPixel(70, 210 + b, COLOR_WHITE);
+    LCD_DrawPixel(170, 210 + b, COLOR_WHITE);
   }
-  LCD_DrawString(95, 212, "HELP", &Font16, COLOR_WHITE, COLOR_GRAY);
+  LCD_DrawString(95, 215, "HELP", &Font16, COLOR_WHITE, COLOR_GRAY);
 }
 
 void drawHelpScreen(void)
@@ -416,7 +449,7 @@ void drawHelpScreen(void)
 
   LCD_DrawString(10, 50,  "MOVE: Joystick/D-pad", &Font12, COLOR_WHITE, COLOR_BLACK);
   LCD_DrawString(10, 68,  "PA0 BUTTON:", &Font12, COLOR_CYAN, COLOR_BLACK);
-  LCD_DrawString(10, 84,  "Start/Pause/Resume/Back", &Font12, COLOR_WHITE, COLOR_BLACK);
+  LCD_DrawString(10, 84,  "Pause auto-saves game", &Font12, COLOR_WHITE, COLOR_BLACK);
   LCD_DrawString(10, 110, "IN MENU:", &Font12, COLOR_CYAN, COLOR_BLACK);
   LCD_DrawString(10, 126, "L/R: Map   U/D: Difficulty", &Font12, COLOR_WHITE, COLOR_BLACK);
 
@@ -449,6 +482,18 @@ void drawPausedOverlay(void)
     LCD_DrawPixel(195, 100 + b, COLOR_WHITE);
   }
   LCD_DrawString(75, 113, "PAUSED", &Font16, COLOR_YELLOW, COLOR_DARKGRAY);
+}
+
+void drawCountdown(int value)
+{
+  char text[4];
+  LCD_FillRect(75, 85, 90, 70, COLOR_DARKGRAY);
+  if (value > 0) {
+    sprintf(text, "%d", value);
+    LCD_DrawString(108, 105, text, &Font24, COLOR_YELLOW, COLOR_DARKGRAY);
+  } else {
+    LCD_DrawString(92, 105, "GO!", &Font24, COLOR_GREEN, COLOR_DARKGRAY);
+  }
 }
 
 void drawGameOverScreen(void)
@@ -626,6 +671,14 @@ void resetGame(void)
   drawControlPanel();
 }
 
+static void BeginCountdown(void)
+{
+  countdownValue = 3;
+  countdownNextTick = osKernelSysTick() + 1000U;
+  gameStatus = 5;
+  Sound_Play(SOUND_COUNTDOWN);
+}
+
 int checkCollision(void)
 {
   if (isObstacle(snakeX[0], snakeY[0], currentMap)) {
@@ -695,6 +748,9 @@ int main(void)
   osThreadDef(inputTask, StartInputTask, osPriorityAboveNormal, 0, 512);
   inputTaskHandle = osThreadCreate(osThread(inputTask), NULL);
 
+  osThreadDef(soundTask, StartSoundTask, osPriorityBelowNormal, 0, 256);
+  soundTaskHandle = osThreadCreate(osThread(soundTask), NULL);
+
   osKernelStart();
 
   while (1) {}
@@ -740,24 +796,32 @@ void StartGameTask(void const * argument)
         int collision = checkCollision();
         uint8_t needSave = 0;
         if (collision == 0) {
+          uint8_t achievedHighScore = highScoreDirty;
           gameStatus = 2; /* Game over */
-          if (highScoreDirty) { needSave = 1; highScoreDirty = 0; }
+          /* Game over invalidates any paused-game snapshot. Persist even when
+             the high score did not change so CONTINUE cannot revive it. */
+          needSave = 1;
+          highScoreDirty = 0;
+          Sound_Play(achievedHighScore ? SOUND_HIGH_SCORE : SOUND_GAME_OVER);
         } else if (collision == 2) {
           int slot = lastEatenFoodSlot;
           int eatenType = foodType[slot];
           switch (eatenType) {
             case 1: /* bonus */
+              Sound_Play(SOUND_BONUS);
               score += 5;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
               snakeLength++;
               break;
             case 2: /* speed boost */
+              Sound_Play(SOUND_SPEED_BOOST);
               score++;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
               snakeLength++;
               speedBoostTicks = SPEED_BOOST_DURATION_TICKS;
               break;
             case 3: /* shrink */
+              Sound_Play(SOUND_SHRINK);
               score++;
               {
                 int newLen = snakeLength - 2;
@@ -770,6 +834,7 @@ void StartGameTask(void const * argument)
               }
               break;
             default: /* normal */
+              Sound_Play(SOUND_EAT);
               score++;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
               snakeLength++;
@@ -794,6 +859,23 @@ void StartGameTask(void const * argument)
         }
       }
     }
+    else if (gameStatus == 5) {
+      uint32_t now = osKernelSysTick();
+      if ((int32_t)(now - countdownNextTick) >= 0) {
+        osMutexWait(gameMutexHandle, osWaitForever);
+        countdownValue--;
+        if (countdownValue <= 0) {
+          countdownValue = 0;
+          Sound_Play(SOUND_GO);
+          gameStatus = 1;
+          lastTick = now;
+        } else {
+          Sound_Play(SOUND_COUNTDOWN);
+          countdownNextTick += 1000U;
+        }
+        osMutexRelease(gameMutexHandle);
+      }
+    }
   }
 }
 
@@ -805,6 +887,7 @@ void StartDisplayTask(void const * argument)
   int lastDifficulty = -1;
   int lastColorIdx = -1;
   int lastGameSpeed = -1;
+  int lastCountdownValue = -1;
 
   for(;;)
   {
@@ -843,6 +926,12 @@ void StartDisplayTask(void const * argument)
       else if (currentStatus == 4) // Help
       {
         drawHelpScreen();
+      }
+      else if (currentStatus == 5) // Countdown before start/resume
+      {
+        drawMap(currentMap);
+        drawControlPanel();
+        lastCountdownValue = -1;
       }
     }
     
@@ -900,6 +989,13 @@ void StartDisplayTask(void const * argument)
       }
       
       osMutexRelease(gameMutexHandle);
+    }
+    else if (currentStatus == 5)
+    {
+      if (countdownValue != lastCountdownValue) {
+        lastCountdownValue = countdownValue;
+        drawCountdown(countdownValue);
+      }
     }
     else if (currentStatus == 0)
     {
@@ -1000,8 +1096,16 @@ void StartInputTask(void const * argument)
       else if (joyDir == 1 && lastAppliedDir != 3) snakeDir = 1;
       else if (joyDir == 2 && lastAppliedDir != 0) snakeDir = 2;
       else if (joyDir == 3 && lastAppliedDir != 1) snakeDir = 3;
-      if (buttonPressed) gameStatus = 3; /* Pause */
+      if (buttonPressed) {
+        gameStatus = 3; /* Pause */
+        /* Save while holding the game mutex so movement cannot modify the
+           snapshot during the Flash erase/program operation. */
+        Flash_SavePausedGame();
+      }
       osMutexRelease(gameMutexHandle);
+      if (buttonPressed) {
+        Sound_Play(SOUND_PAUSE);
+      }
       if (buttonPressed) osDelay(200);
     }
     else if (gameStatus == 3) // Paused state
@@ -1009,7 +1113,7 @@ void StartInputTask(void const * argument)
       if (buttonPressed)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
-        gameStatus = 1; /* Resume */
+        BeginCountdown(); /* Resume after 3-2-1 */
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
@@ -1018,12 +1122,20 @@ void StartInputTask(void const * argument)
     {
       if (inputDetected)
       {
-        // Touch on START button
-        if (x >= 70 && x <= 170 && y >= 170 && y <= 200)
+        // Touch on START button: discard an older save and start fresh.
+        if (x >= 15 && x <= 110 && y >= 175 && y <= 202)
         {
+          Flash_ClearSavedGame();
           osMutexWait(gameMutexHandle, osWaitForever);
           resetGame();
-          gameStatus = 1;
+          BeginCountdown();
+          osMutexRelease(gameMutexHandle);
+        }
+        // Touch on CONTINUE button: restore the paused game from Flash.
+        else if (x >= 130 && x <= 225 && y >= 175 && y <= 202 && savedGameAvailable)
+        {
+          osMutexWait(gameMutexHandle, osWaitForever);
+          if (Flash_RestoreSavedGame()) BeginCountdown();
           osMutexRelease(gameMutexHandle);
         }
         // Touch on D-pad LEFT to cycle map down
@@ -1033,6 +1145,7 @@ void StartInputTask(void const * argument)
           currentMap--;
           if (currentMap < 1) currentMap = 6;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
           osDelay(200);
         }
         // Touch on D-pad RIGHT to cycle map up
@@ -1042,13 +1155,17 @@ void StartInputTask(void const * argument)
           currentMap++;
           if (currentMap > 6) currentMap = 1;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
           osDelay(200);
         }
         // Touch on D-pad UP to increase difficulty
         else if (x >= 35 && x <= 75 && y >= 240 && y <= 268)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
-          if (difficulty < DIFF_COUNT - 1) difficulty++;
+          if (difficulty < DIFF_COUNT - 1) {
+            difficulty++;
+            Sound_Play(SOUND_SELECT);
+          }
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
@@ -1056,16 +1173,20 @@ void StartInputTask(void const * argument)
         else if (x >= 35 && x <= 75 && y >= 292 && y <= 320)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
-          if (difficulty > 0) difficulty--;
+          if (difficulty > 0) {
+            difficulty--;
+            Sound_Play(SOUND_SELECT);
+          }
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
         // Touch on HELP button
-        else if (x >= 70 && x <= 170 && y >= 207 && y <= 232)
+        else if (x >= 70 && x <= 170 && y >= 210 && y <= 235)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
           gameStatus = 4;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
         }
         // Touch on COLOR text
         else if (x >= 40 && x <= 200 && y >= 155 && y <= 175)
@@ -1083,6 +1204,7 @@ void StartInputTask(void const * argument)
         currentMap--;
         if (currentMap < 1) currentMap = 6;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
       else if (joyDir == 1)
@@ -1091,27 +1213,35 @@ void StartInputTask(void const * argument)
         currentMap++;
         if (currentMap > 6) currentMap = 1;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
       else if (joyDir == 0)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
-        if (difficulty < DIFF_COUNT - 1) difficulty++;
+        if (difficulty < DIFF_COUNT - 1) {
+          difficulty++;
+          Sound_Play(SOUND_SELECT);
+        }
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
       else if (joyDir == 2)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
-        if (difficulty > 0) difficulty--;
+        if (difficulty > 0) {
+          difficulty--;
+          Sound_Play(SOUND_SELECT);
+        }
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
       else if (buttonPressed)
       {
+        Flash_ClearSavedGame();
         osMutexWait(gameMutexHandle, osWaitForever);
         resetGame();
-        gameStatus = 1;
+        BeginCountdown();
         osMutexRelease(gameMutexHandle);
       }
     }
@@ -1125,6 +1255,7 @@ void StartInputTask(void const * argument)
           osMutexWait(gameMutexHandle, osWaitForever);
           gameStatus = 0;
           osMutexRelease(gameMutexHandle);
+          Sound_Play(SOUND_SELECT);
           osDelay(200);
         }
       }
@@ -1134,6 +1265,7 @@ void StartInputTask(void const * argument)
         osMutexWait(gameMutexHandle, osWaitForever);
         gameStatus = 0;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
     }
@@ -1145,10 +1277,88 @@ void StartInputTask(void const * argument)
         osMutexWait(gameMutexHandle, osWaitForever);
         gameStatus = 0;
         osMutexRelease(gameMutexHandle);
+        Sound_Play(SOUND_SELECT);
         osDelay(200);
       }
     }
     osDelay(20);
+  }
+}
+
+/* ---------- Non-blocking sound service for an active buzzer ---------- */
+static void Sound_Play(SoundEvent event)
+{
+  /* A newer event replaces one that has not started yet. The sound task owns
+     all delays, so game/input/display tasks are never blocked by a beep. */
+  pendingSound = event;
+}
+
+static void Buzzer_Pulse(uint32_t onMs, uint32_t offMs)
+{
+  HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_ACTIVE_STATE);
+  osDelay(onMs);
+  HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
+  if (offMs > 0) osDelay(offMs);
+}
+
+void StartSoundTask(void const * argument)
+{
+  HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
+
+  for (;;) {
+    taskENTER_CRITICAL();
+    SoundEvent event = pendingSound;
+    pendingSound = SOUND_NONE;
+    taskEXIT_CRITICAL();
+
+    if (event == SOUND_NONE) {
+      osDelay(10);
+      continue;
+    }
+
+    switch (event) {
+      case SOUND_SELECT:
+        Buzzer_Pulse(35, 0);
+        break;
+      case SOUND_EAT:
+        Buzzer_Pulse(60, 0);
+        break;
+      case SOUND_BONUS:
+        Buzzer_Pulse(55, 45);
+        Buzzer_Pulse(55, 0);
+        break;
+      case SOUND_SPEED_BOOST:
+        Buzzer_Pulse(35, 25);
+        Buzzer_Pulse(35, 25);
+        Buzzer_Pulse(80, 0);
+        break;
+      case SOUND_SHRINK:
+        Buzzer_Pulse(160, 0);
+        break;
+      case SOUND_PAUSE:
+        Buzzer_Pulse(90, 60);
+        Buzzer_Pulse(90, 0);
+        break;
+      case SOUND_COUNTDOWN:
+        Buzzer_Pulse(70, 0);
+        break;
+      case SOUND_GO:
+        Buzzer_Pulse(180, 0);
+        break;
+      case SOUND_GAME_OVER:
+        Buzzer_Pulse(180, 100);
+        Buzzer_Pulse(180, 100);
+        Buzzer_Pulse(450, 0);
+        break;
+      case SOUND_HIGH_SCORE:
+        Buzzer_Pulse(60, 45);
+        Buzzer_Pulse(60, 45);
+        Buzzer_Pulse(60, 45);
+        Buzzer_Pulse(300, 0);
+        break;
+      default:
+        break;
+    }
   }
 }
 
@@ -1442,42 +1652,187 @@ void BSP_TS_GetState(TS_StateTypeDef* TsState)
   }
 }
 
-/* ---------- High score persistence (internal Flash, Bank2 Sector 12) ----------
-   Sector 12 is a 16KB sector at the start of Bank2 (0x08100000), well outside
-   the program's own Bank1 code/data, so it's safe to erase/rewrite. */
+/* ---------- High score + paused game persistence (Flash Bank2 Sector 12) -----
+   Writes happen only on Pause, New Game and Game Over. A version and checksum
+   reject incomplete/corrupt records after an interrupted Flash operation. */
 #define HS_FLASH_ADDR   0x08100000U
 #define HS_FLASH_SECTOR FLASH_SECTOR_12
 #define HS_FLASH_MAGIC  0x534E414BU /* 'SNAK' */
+#define SAVE_VERSION    2U
 
 typedef struct {
   uint32_t magic;
+  uint32_t version;
   uint32_t highScore;
-} HighScoreRecord;
+  uint32_t savedValid;
+  int32_t snakeLength;
+  int32_t snakeDir;
+  int32_t lastAppliedDir;
+  int32_t gameSpeed;
+  int32_t currentMap;
+  int32_t score;
+  int32_t difficulty;
+  int32_t currentColorIdx;
+  int32_t speedBoostTicks;
+  int32_t tailX;
+  int32_t tailY;
+  int32_t snakeX[MAX_GAME_X * MAX_GAME_Y];
+  int32_t snakeY[MAX_GAME_X * MAX_GAME_Y];
+  int32_t foodX[MAX_FOOD];
+  int32_t foodY[MAX_FOOD];
+  int32_t foodType[MAX_FOOD];
+  uint32_t foodActive[MAX_FOOD];
+  int32_t foodTicksLeft[MAX_FOOD];
+  uint32_t checksum;
+} PersistentRecord;
 
-static void Flash_LoadHighScore(void)
+static PersistentRecord persistBuffer;
+
+static uint32_t Persistence_Checksum(const PersistentRecord *record)
 {
-  const HighScoreRecord *rec = (const HighScoreRecord *)HS_FLASH_ADDR;
-  highScore = (rec->magic == HS_FLASH_MAGIC) ? (int)rec->highScore : 0;
+  const uint32_t *words = (const uint32_t *)record;
+  uint32_t count = (sizeof(PersistentRecord) - sizeof(uint32_t)) / sizeof(uint32_t);
+  uint32_t hash = 2166136261U;
+  for (uint32_t i = 0; i < count; i++) {
+    hash ^= words[i];
+    hash *= 16777619U;
+  }
+  return hash;
 }
 
-static void Flash_SaveHighScore(int value)
+static uint8_t Persistence_RecordValid(const PersistentRecord *record)
 {
-  FLASH_EraseInitTypeDef eraseInit;
-  uint32_t sectorError = 0;
+  if (record->magic != HS_FLASH_MAGIC || record->version != SAVE_VERSION) return 0;
+  return record->checksum == Persistence_Checksum(record);
+}
 
-  HAL_FLASH_Unlock();
+static uint8_t Persistence_Write(uint8_t includeGame)
+{
+  FLASH_EraseInitTypeDef eraseInit = {0};
+  uint32_t sectorError = 0;
+  HAL_StatusTypeDef status;
+
+  savedGameAvailable = 0;
+  memset(&persistBuffer, 0, sizeof(persistBuffer));
+  persistBuffer.magic = HS_FLASH_MAGIC;
+  persistBuffer.version = SAVE_VERSION;
+  persistBuffer.highScore = (uint32_t)highScore;
+  persistBuffer.savedValid = includeGame ? 1U : 0U;
+
+  if (includeGame) {
+    persistBuffer.snakeLength = snakeLength;
+    persistBuffer.snakeDir = snakeDir;
+    persistBuffer.lastAppliedDir = lastAppliedDir;
+    persistBuffer.gameSpeed = gameSpeed;
+    persistBuffer.currentMap = currentMap;
+    persistBuffer.score = score;
+    persistBuffer.difficulty = difficulty;
+    persistBuffer.currentColorIdx = currentColorIdx;
+    persistBuffer.speedBoostTicks = speedBoostTicks;
+    persistBuffer.tailX = tailX;
+    persistBuffer.tailY = tailY;
+    for (int i = 0; i < MAX_GAME_X * MAX_GAME_Y; i++) {
+      persistBuffer.snakeX[i] = snakeX[i];
+      persistBuffer.snakeY[i] = snakeY[i];
+    }
+    for (int f = 0; f < MAX_FOOD; f++) {
+      persistBuffer.foodX[f] = foodX[f];
+      persistBuffer.foodY[f] = foodY[f];
+      persistBuffer.foodType[f] = foodType[f];
+      persistBuffer.foodActive[f] = foodActive[f];
+      persistBuffer.foodTicksLeft[f] = foodTicksLeft[f];
+    }
+  }
+  persistBuffer.checksum = Persistence_Checksum(&persistBuffer);
+
+  status = HAL_FLASH_Unlock();
+  if (status != HAL_OK) return 0;
 
   eraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
   eraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
   eraseInit.Sector = HS_FLASH_SECTOR;
   eraseInit.NbSectors = 1;
   eraseInit.Banks = FLASH_BANK_2;
-  HAL_FLASHEx_Erase(&eraseInit, &sectorError);
+  status = HAL_FLASHEx_Erase(&eraseInit, &sectorError);
 
-  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, HS_FLASH_ADDR, HS_FLASH_MAGIC);
-  HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD, HS_FLASH_ADDR + 4, (uint32_t)value);
+  if (status == HAL_OK) {
+    const uint32_t *words = (const uint32_t *)&persistBuffer;
+    for (uint32_t i = 0; i < sizeof(PersistentRecord) / sizeof(uint32_t); i++) {
+      status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_WORD,
+                                 HS_FLASH_ADDR + i * sizeof(uint32_t), words[i]);
+      if (status != HAL_OK) break;
+    }
+  }
 
   HAL_FLASH_Lock();
+  if (status == HAL_OK) savedGameAvailable = includeGame;
+  return status == HAL_OK;
+}
+
+static void Flash_LoadHighScore(void)
+{
+  const PersistentRecord *record = (const PersistentRecord *)HS_FLASH_ADDR;
+  if (Persistence_RecordValid(record)) {
+    memcpy(&persistBuffer, record, sizeof(persistBuffer));
+    highScore = (int)persistBuffer.highScore;
+    savedGameAvailable = persistBuffer.savedValid &&
+                         persistBuffer.snakeLength >= 3 &&
+                         persistBuffer.snakeLength <= MAX_GAME_X * MAX_GAME_Y &&
+                         persistBuffer.currentMap >= 1 && persistBuffer.currentMap <= 6 &&
+                         persistBuffer.difficulty >= 0 && persistBuffer.difficulty < DIFF_COUNT;
+  } else {
+    /* Compatibility with the original two-word high-score record. */
+    const uint32_t *oldRecord = (const uint32_t *)HS_FLASH_ADDR;
+    highScore = (oldRecord[0] == HS_FLASH_MAGIC && oldRecord[2] == 0xFFFFFFFFU)
+                  ? (int)oldRecord[1] : 0;
+    savedGameAvailable = 0;
+  }
+}
+
+static void Flash_SaveHighScore(int value)
+{
+  highScore = value;
+  Persistence_Write(0);
+}
+
+static void Flash_SavePausedGame(void)
+{
+  Persistence_Write(1);
+}
+
+static void Flash_ClearSavedGame(void)
+{
+  if (savedGameAvailable) Persistence_Write(0);
+}
+
+static uint8_t Flash_RestoreSavedGame(void)
+{
+  if (!savedGameAvailable) return 0;
+
+  snakeLength = persistBuffer.snakeLength;
+  snakeDir = persistBuffer.snakeDir;
+  lastAppliedDir = persistBuffer.lastAppliedDir;
+  gameSpeed = persistBuffer.gameSpeed;
+  currentMap = persistBuffer.currentMap;
+  score = persistBuffer.score;
+  difficulty = persistBuffer.difficulty;
+  currentColorIdx = persistBuffer.currentColorIdx;
+  speedBoostTicks = persistBuffer.speedBoostTicks;
+  tailX = persistBuffer.tailX;
+  tailY = persistBuffer.tailY;
+  pendingClearCount = 0;
+  for (int i = 0; i < MAX_GAME_X * MAX_GAME_Y; i++) {
+    snakeX[i] = persistBuffer.snakeX[i];
+    snakeY[i] = persistBuffer.snakeY[i];
+  }
+  for (int f = 0; f < MAX_FOOD; f++) {
+    foodX[f] = persistBuffer.foodX[f];
+    foodY[f] = persistBuffer.foodY[f];
+    foodType[f] = persistBuffer.foodType[f];
+    foodActive[f] = (uint8_t)persistBuffer.foodActive[f];
+    foodTicksLeft[f] = persistBuffer.foodTicksLeft[f];
+  }
+  return 1;
 }
 
 /* ---------- Joystick (analog VRx/VRy + onboard PA0 button) ---------- */
@@ -1552,6 +1907,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* PA2 drives the base resistor of an external NPN buzzer transistor.
+     Keep it low at startup so the buzzer remains off. */
+  HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
+  GPIO_InitStruct.Pin = BUZZER_GPIO_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(BUZZER_GPIO_PORT, &GPIO_InitStruct);
 }
 
 void Error_Handler(void)
