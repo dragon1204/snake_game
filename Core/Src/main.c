@@ -127,7 +127,7 @@ volatile int speedBoostTicks = 0;
 /* Bare 5V active buzzer driven through an external NPN transistor on PA2.
    PA2 HIGH turns the transistor (and buzzer) on; PA2 LOW turns it off.
    Do not connect the 5V buzzer directly to the STM32 GPIO. */
-#define BUZZER_GPIO_PORT     GPIOA
+#define BUZZER_GPIO_PORT     GPIOE
 #define BUZZER_GPIO_PIN      GPIO_PIN_2
 #define BUZZER_ACTIVE_STATE  GPIO_PIN_SET
 #define BUZZER_IDLE_STATE    GPIO_PIN_RESET
