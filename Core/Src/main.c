@@ -7,7 +7,7 @@
   */
 /* USER CODE END Header */
 
-/* Includes ------------------------------------------------------------------*/
+/* Thư viện sử dụng -----------------------------------------------------------*/
 #include "main.h"
 #include "cmsis_os.h"
 #include "ili9341.h"
@@ -23,7 +23,7 @@
 #include "../../Utilities/Fonts/font20.c"
 #include "../../Utilities/Fonts/font24.c"
 
-/* Private define ------------------------------------------------------------*/
+/* Định nghĩa riêng ----------------------------------------------------------*/
 #define LCD_W 240
 #define LCD_H 320
 #define PIXEL_SIZE 10
@@ -36,7 +36,7 @@
 #define PORTAL2_X 18
 #define PORTAL2_Y 12
 
-/* Color definitions (RGB565) */
+/* Định nghĩa màu sắc (RGB565) */
 #define COLOR_BLACK   0x0000
 #define COLOR_WHITE   0xFFFF
 #define COLOR_RED     0xF800
@@ -51,64 +51,59 @@
 
 #define TS_I2C_ADDRESS 0x82
 
-/* Private variables ---------------------------------------------------------*/
+/* Biến riêng ---------------------------------------------------------------*/
 I2C_HandleTypeDef hi2c3;
 LTDC_HandleTypeDef hltdc;
 SPI_HandleTypeDef hspi5;
 SDRAM_HandleTypeDef hsdram1;
 TIM_HandleTypeDef htim6;
-ADC_HandleTypeDef hadc1; /* Joystick Y axis: PC3 */
-ADC_HandleTypeDef hadc2; /* Joystick X axis: PA5 */
+ADC_HandleTypeDef hadc1; /* Trục Y Joystick: PC3 */
+ADC_HandleTypeDef hadc2; /* Trục X Joystick: PA5 */
 
-/* Joystick calibration (re-captured every time the Menu is entered) */
+/* Hiệu chuẩn Joystick (được đọc lại mỗi khi vào Menu) */
 #define JOY_DEADZONE 700
 static uint16_t joyXCenter = 2048;
 static uint16_t joyYCenter = 2048;
 volatile uint8_t requestJoyRecalibrate = 0;
 
-/* Game state */
+/* Trạng thái game */
 volatile int gameSpeed = 150;
-volatile int snakeDir = 1;    /* 0:Up, 1:Right, 2:Down, 3:Left (requested; may change more than once per tick) */
-volatile int lastAppliedDir = 1; /* direction actually used by the last moveSnake() - the real heading */
+volatile int snakeDir = 1;    /* 0:Lên, 1:Phải, 2:Xuống, 3:Trái (hướng người chơi nhấn) */
+volatile int lastAppliedDir = 1; /* hướng thực tế vừa di chuyển ở tick trước */
 volatile int snakeLength = 3;
-volatile int gameStatus = 0;  /* 0:Menu, 1:Playing, 2:Game Over, 3:Paused, 4:Help, 5:Countdown */
-volatile int currentMap = 1;  /* 1 to 5 */
+volatile int gameStatus = 0;  /* 0:Menu, 1:Đang chơi, 2:Thua, 3:Tạm dừng, 4:Trợ giúp, 5:Đếm ngược */
+volatile int currentMap = 1;  /* Bản đồ từ 1 đến 6 */
 volatile int score = 0;
 volatile int highScore = 0;
-volatile uint8_t highScoreDirty = 0; /* set when highScore changes, cleared once saved to flash */
+volatile uint8_t highScoreDirty = 0; /* đặt khi có kỷ lục mới, xóa đi sau khi đã lưu thành công */
 int snakeX[MAX_GAME_X * MAX_GAME_Y];
 int snakeY[MAX_GAME_X * MAX_GAME_Y];
 int tailX, tailY;
 
-/* Multiple food pellets can be on the map at once, each with its own type,
-   position and lifetime - so the player is never stuck waiting on a single
-   pellet, and an uneaten pellet eventually expires and relocates on its own. */
+/* Nhiều viên mồi có thể xuất hiện cùng lúc, mỗi viên có loại, vị trí và thời
+   gian sống riêng - tránh kẹt game và tự động đổi vị trí khi hết hạn. */
 #define MAX_FOOD 3
-#define FOOD_LIFETIME_TICKS 40 /* ~10s at 250ms per game-task loop iteration */
+#define FOOD_LIFETIME_TICKS 40 /* khoảng 10 giây ở chu kỳ game 250ms */
 int foodX[MAX_FOOD];
 int foodY[MAX_FOOD];
-volatile int foodType[MAX_FOOD];     /* 0 normal, 1 bonus(+5), 2 speed-boost, 3 shrink */
+volatile int foodType[MAX_FOOD];     /* 0: thường, 1: bonus(+5đ), 2: tăng tốc, 3: co ngắn */
 volatile uint8_t foodActive[MAX_FOOD];
 volatile int foodTicksLeft[MAX_FOOD];
-volatile int lastEatenFoodSlot = -1; /* set by checkCollision(), read right after */
+volatile int lastEatenFoodSlot = -1; /* được cập nhật bởi checkCollision() */
 
-/* Cells that must be blacked out because something vanished from them without
-   the snake body or a new food happening to redraw over that cell this frame
-   (shrink-food removing 2 segments at once, or a food pellet expiring). */
+/* Các ô cần xóa đen do mồi hết hạn hoặc rắn co ngắn thân lại. */
 #define MAX_PENDING_CLEAR (MAX_FOOD + 2)
 int pendingClearX[MAX_PENDING_CLEAR];
 int pendingClearY[MAX_PENDING_CLEAR];
 volatile int pendingClearCount = 0;
 
-/* Difficulty presets (ms delay per game tick, lower = faster). Each level also
-   has its own speed floor and ramp-up step, so they stay distinct all game
-   long instead of converging to the same top speed after a bit of eating. */
+//độ khó game
 #define DIFF_COUNT 3
-static const int difficultySpeeds[DIFF_COUNT]    = {220, 150,  90}; /* starting speed */
-static const int difficultyMinSpeeds[DIFF_COUNT] = {130,  70,  35}; /* speed floor */
-static const int difficultyStepMs[DIFF_COUNT]    = {  3,   5,   8}; /* ms faster per food eaten */
+static const int difficultySpeeds[DIFF_COUNT]    = {220, 150,  90}; //tốc độ khởi đầu
+static const int difficultyMinSpeeds[DIFF_COUNT] = {130,  70,  35}; //tốc độ tối thiểu
+static const int difficultyStepMs[DIFF_COUNT]    = {  3,   5,   8}; //tốc độ tăng thêm mỗi khi ăn thức ăn
 static const char * const difficultyNames[DIFF_COUNT] = {"EASY  ", "NORMAL", "HARD  "};
-volatile int difficulty = 1; /* 0:Easy, 1:Normal, 2:Hard */
+volatile int difficulty = 1; //0:Easy, 1:Normal, 2:Hard 
 
 #define COLOR_COUNT 5
 static const uint16_t snakeColors[COLOR_COUNT] = {COLOR_GREEN, COLOR_RED, COLOR_BLUE, COLOR_PINK, COLOR_WHITE};
@@ -117,18 +112,15 @@ volatile int currentColorIdx = 0;
 
 volatile int speedBoostTicks = 0;
 #define SPEED_BOOST_DURATION_TICKS 20
-/* Boosted delay = gameSpeed * NUM/DEN (a proportional cut, not a flat ms
-   subtraction) so the boost scales with whatever the current difficulty's
-   speed happens to be, instead of a flat -60ms letting Easy's floor dip
-   into Normal's speed range. */
+/* Tính toán tốc độ gia tốc tỉ lệ theo phần trăm thay vì trừ ms cố định. */
 #define SPEED_BOOST_FACTOR_NUM 7
 #define SPEED_BOOST_FACTOR_DEN 10
 
-/* Bare 5V active buzzer driven through an external NPN transistor on PC4.
-   PC4 HIGH turns the transistor (and buzzer) on; PC4 LOW turns it off.
-   Do not connect the 5V buzzer directly to the STM32 GPIO. */
-#define BUZZER_GPIO_PORT     GPIOA
-#define BUZZER_GPIO_PIN      GPIO_PIN_2
+/* Còi buzzer 5V điều khiển qua transistor NPN ở chân PC4.
+   PC4 mức HIGH để bật còi; mức LOW để tắt còi.
+   Không nối trực tiếp còi buzzer vào GPIO STM32. */
+#define BUZZER_GPIO_PORT     GPIOC
+#define BUZZER_GPIO_PIN      GPIO_PIN_4
 #define BUZZER_ACTIVE_STATE  GPIO_PIN_SET
 #define BUZZER_IDLE_STATE    GPIO_PIN_RESET
 
@@ -171,7 +163,7 @@ LCD_DrvTypeDef *LcdDrv;
 TS_DrvTypeDef *TsDrv;
 static uint16_t TsXBoundary, TsYBoundary;
 
-/* Private function prototypes -----------------------------------------------*/
+/* Khai báo nguyên mẫu hàm ----------------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_I2C3_Init(void);
@@ -182,12 +174,12 @@ static void MX_ADC1_Init(void);
 static void MX_ADC2_Init(void);
 static void BSP_SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_SDRAM_CommandTypeDef *Command);
 
-/* Joystick helpers */
+/* Các hàm hỗ trợ Joystick */
 static uint16_t ADC_ReadChannel(ADC_HandleTypeDef *hadc);
 static void JoystickCalibrateCenter(void);
 static int ReadJoystickDirection(void);
 
-/* High score persistence (internal Flash) */
+/* Lưu trữ điểm cao vào Flash nội */
 static void Flash_LoadHighScore(void);
 static void Flash_SaveHighScore(int value);
 static void Flash_SavePausedGame(void);
@@ -198,14 +190,14 @@ static void BeginCountdown(void);
 uint8_t BSP_TS_Init(uint16_t XSize, uint16_t YSize);
 void    BSP_TS_GetState(TS_StateTypeDef* TsState);
 
-/* FreeRTOS tasks */
+/* Các tác vụ FreeRTOS */
 void StartGameTask(void const * argument);
 void StartDisplayTask(void const * argument);
 void StartInputTask(void const * argument);
 void StartSoundTask(void const * argument);
 static void Sound_Play(SoundEvent event);
 
-/* ---------- Direct framebuffer drawing helpers (RGB565) ---------- */
+/* ---------- Hàm vẽ trực tiếp lên Framebuffer (RGB565) ---------- */
 static inline void LCD_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 {
   if (x < LCD_W && y < LCD_H)
@@ -267,54 +259,54 @@ void LCD_DrawString(uint16_t x, uint16_t y, const char *str, sFONT *font, uint16
 
 int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
 {
-  // Outer walls boundary
+  // tường bao quanh
   if (x == 0 || x == MAX_GAME_X - 1 || y == 0 || y == MAX_GAME_Y - 1)
   {
     return 1;
   }
   
-  if (map_id == 1) // Map 1: Empty (Classic)
+  if (map_id == 1) // bản đồ 1: cổ điển (trống)
   {
     return 0;
   }
-  else if (map_id == 2) // Map 2: Center Box
+  else if (map_id == 2) // bản đồ 2: hộp trung tâm
   {
-    // Solid square in the middle: rows/cols 8 to 15 (filled, not just the
-    // outline - a hollow outline traps unreachable cells inside it, and food
-    // could spawn there with no way for the snake to ever reach it)
+    // khối vuông đặc ở giữa từ hàng/cột 8 đến 15
+    // vẽ viền rỗng
+    // tránh sinh mồi ở nơi không thể ăn được
     if (x >= 8 && x <= 15 && y >= 8 && y <= 15)
     {
       return 1;
     }
   }
-  else if (map_id == 3) // Map 3: Four Corners
+  else if (map_id == 3) // bản đồ 3: bốn góc
   {
-    // Obstacles at corners
+    // vật cản ở 4 góc
     if (((x >= 4 && x <= 6) || (x >= 17 && x <= 19)) &&
         (((y >= 4 && y <= 6) || (y >= 17 && y <= 19))))
     {
       return 1;
     }
   }
-  else if (map_id == 4) // Map 4: Vertical Pillars
+  else if (map_id == 4) // bản đồ 4: cột thẳng đứng
   {
-    // Two vertical walls: col 6 and col 17, from row 5 to 18
+    // hai cột đứng ở cột 6 và 17 từ dòng 5 đến 18
     if ((x == 6 || x == 17) && (y >= 5 && y <= 18))
     {
       return 1;
     }
   }
-  else if (map_id == 5) // Map 5: Cross/Maze
+  else if (map_id == 5) // bản đồ 5: chữ thập trung tâm
   {
-    // A cross in the center
+    // vẽ chữ thập ở giữa
     if ((x == 11 && y >= 4 && y <= 19) || (y == 11 && x >= 4 && x <= 19))
     {
       return 1;
     }
   }
-  else if (map_id == 6) // Map 6: Portals
+  else if (map_id == 6) // bản đồ 6: cổng dịch chuyển
   {
-    // No wall obstacles in the middle
+    // không có vật cản ở giữa
     return 0;
   }
   return 0;
@@ -342,10 +334,10 @@ void drawMap(uint8_t map_id)
   }
   
   if (map_id == 6) {
-    // Draw portals
+    // vẽ cổng dịch chuyển
     LCD_FillRect(PORTAL1_X * PIXEL_SIZE, PORTAL1_Y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_PINK);
     LCD_FillRect(PORTAL2_X * PIXEL_SIZE, PORTAL2_Y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_PINK);
-    // Draw a hollow center to make it look like a portal
+    // vẽ tâm rỗng cho cổng portal
     LCD_FillRect(PORTAL1_X * PIXEL_SIZE + 2, PORTAL1_Y * PIXEL_SIZE + 2, PIXEL_SIZE - 4, PIXEL_SIZE - 4, COLOR_BLACK);
     LCD_FillRect(PORTAL2_X * PIXEL_SIZE + 2, PORTAL2_Y * PIXEL_SIZE + 2, PIXEL_SIZE - 4, PIXEL_SIZE - 4, COLOR_BLACK);
   }
@@ -359,7 +351,7 @@ void drawControlPanel(void)
     LCD_DrawPixel(i, 240, COLOR_WHITE);
   }
   
-  // D-PAD Buttons (Up: 45-75, 245-265; Down: 45-75, 295-315; Left: 10-40, 270-290; Right: 80-110, 270-290)
+  // tọa độ nút D-PAD
   LCD_FillRect(45, 245, 30, 20, COLOR_GRAY);
   LCD_DrawString(56, 247, "^", &Font16, COLOR_WHITE, COLOR_GRAY);
   
@@ -372,9 +364,9 @@ void drawControlPanel(void)
   LCD_FillRect(80, 270, 30, 20, COLOR_GRAY);
   LCD_DrawString(91, 272, ">", &Font16, COLOR_WHITE, COLOR_GRAY);
 
-  LCD_FillRect(45, 270, 30, 20, COLOR_GRAY); // Center core
+  LCD_FillRect(45, 270, 30, 20, COLOR_GRAY); // khối trung tâm
 
-  // INFO PANEL
+  // bảng thông tin
   char scoreBuf[16];
   sprintf(scoreBuf, "%02d", score);
   LCD_DrawString(125, 248, "SCORE:", &Font12, COLOR_CYAN, COLOR_DARKGRAY);
@@ -398,34 +390,34 @@ void drawControlPanel(void)
 
 void drawMenuScreen(void)
 {
-  LCD_FillRect(0, 0, 240, 240, COLOR_BLACK);
+  LCD_FillRect(0, 0, 240, 240, COLOR_BLACK); // xóa màn hình nền đen
   
-  LCD_DrawString(40, 25, "SNAKE GAME", &Font24, COLOR_YELLOW, COLOR_BLACK);
-  LCD_DrawString(65, 70, "SELECT MAP", &Font16, COLOR_WHITE, COLOR_BLACK);
+  LCD_DrawString(40, 25, "SNAKE GAME", &Font24, COLOR_YELLOW, COLOR_BLACK); // vẽ tiêu đề
+  LCD_DrawString(65, 70, "SELECT MAP", &Font16, COLOR_WHITE, COLOR_BLACK); // nhãn chọn bản đồ
   
   char mapBuf[16];
   sprintf(mapBuf, "< MAP %d >", currentMap);
-  LCD_DrawString(70, 95, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
+  LCD_DrawString(70, 95, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK); // hiển thị bản đồ hiện tại
 
   char diffBuf[24];
   sprintf(diffBuf, "SPEED: %s", difficultyNames[difficulty]);
-  LCD_DrawString(60, 125, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
+  LCD_DrawString(60, 125, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK); // hiển thị độ khó
 
   char colBuf[24];
   sprintf(colBuf, "COLOR: %s", snakeColorNames[currentColorIdx]);
-  LCD_DrawString(60, 142, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
+  LCD_DrawString(60, 142, colBuf, &Font12, COLOR_PINK, COLOR_BLACK); // hiển thị màu rắn
 
-  // New game button: X: 15-110, Y: 170-197
+  // vẽ nút START (chơi mới)
   LCD_FillRect(15, 170, 95, 27, COLOR_CYAN);
   LCD_DrawString(35, 176, "START", &Font16, COLOR_BLACK, COLOR_CYAN);
 
-  // Continue button is enabled only when a valid paused game exists in Flash.
+  // vẽ nút CONTINUE (chơi tiếp)
   uint16_t continueColor = savedGameAvailable ? COLOR_GREEN : COLOR_DARKGRAY;
   LCD_FillRect(130, 170, 95, 27, continueColor);
   LCD_DrawString(134, 176, "CONTINUE", &Font16,
                  savedGameAvailable ? COLOR_BLACK : COLOR_GRAY, continueColor);
 
-  // Help Button: X: 70-170, Y: 210-235
+  // vẽ nút HELP (trợ giúp)
   LCD_FillRect(70, 210, 100, 25, COLOR_GRAY);
   for(int b=0; b<100; b++) {
     LCD_DrawPixel(70 + b, 210, COLOR_WHITE);
@@ -508,7 +500,7 @@ void drawGameOverScreen(void)
     LCD_DrawString(45, 130, "NEW HIGH SCORE!", &Font16, COLOR_YELLOW, COLOR_BLACK);
   }
   
-  // Menu Button: X: 70-170, Y: 170-200
+  // giao diện menu Button: X: 70-170, Y: 170-200
   LCD_FillRect(70, 170, 100, 30, COLOR_ORANGE);
   for(int b=0; b<100; b++) {
     LCD_DrawPixel(70 + b, 170, COLOR_WHITE);
@@ -521,23 +513,23 @@ void drawGameOverScreen(void)
   LCD_DrawString(98, 177, "MENU", &Font16, COLOR_BLACK, COLOR_ORANGE);
 }
 
-/* ---------- LCD IO & IOE (Bypassing BSP) ---------- */
+/* ---------- Giao tiếp LCD & Bộ mở rộng IO ---------- */
 void LCD_IO_Init(void) {
-  GPIOC->BSRR = (1UL << 18); /* PC2 LOW */
-  GPIOC->BSRR = (1UL << 2);  /* PC2 HIGH */
+  GPIOC->BSRR = (1UL << 18); /* Chân PC2 mức LOW */
+  GPIOC->BSRR = (1UL << 2);  /* Chân PC2 mức HIGH */
 }
 void LCD_IO_WriteData(uint16_t RegValue) {
-  GPIOD->BSRR = (1UL << 13); /* PD13 HIGH */
-  GPIOC->BSRR = (1UL << 18); /* PC2 LOW */
+  GPIOD->BSRR = (1UL << 13); /* Chân PD13 mức HIGH */
+  GPIOC->BSRR = (1UL << 18); /* Chân PC2 mức LOW */
   HAL_SPI_Transmit(&hspi5, (uint8_t*)&RegValue, 1, 1000);
-  GPIOC->BSRR = (1UL << 2);  /* PC2 HIGH */
+  GPIOC->BSRR = (1UL << 2);  /* Chân PC2 mức HIGH */
 }
 void LCD_IO_WriteReg(uint8_t Reg) {
-  GPIOD->BSRR = (1UL << 29); /* PD13 LOW */
-  GPIOC->BSRR = (1UL << 18); /* PC2 LOW */
+  GPIOD->BSRR = (1UL << 29); /* Chân PD13 mức LOW */
+  GPIOC->BSRR = (1UL << 18); /* Chân PC2 mức LOW */
   uint16_t r = Reg;
   HAL_SPI_Transmit(&hspi5, (uint8_t*)&r, 1, 1000);
-  GPIOC->BSRR = (1UL << 2);  /* PC2 HIGH */
+  GPIOC->BSRR = (1UL << 2);  /* Chân PC2 mức HIGH */
 }
 uint32_t LCD_IO_ReadData(uint16_t RegValue, uint8_t ReadSize) {
   uint32_t readvalue = 0;
@@ -567,7 +559,7 @@ uint16_t IOE_ReadMultiple(uint8_t Addr, uint8_t Reg, uint8_t *pBuffer, uint16_t 
   return 1;
 }
 
-/* ---------- Game logic ---------- */
+/* ---------- Logic Trò chơi ---------- */
 static void QueueClear(int x, int y)
 {
   if (pendingClearCount < MAX_PENDING_CLEAR) {
@@ -577,27 +569,31 @@ static void QueueClear(int x, int y)
   }
 }
 
-/* Spawns a new pellet into food slot `slot`, avoiding the snake body,
-   obstacles, and every OTHER currently-active food slot. */
+// sinh thức ăn ngẫu nhiên tránh đè lên rắn, vật cản, và các thức ăn khác
 void spawnFoodAt(int slot)
 {
   int ranX, ranY, flag;
   do {
     flag = 1;
-    ranX = rand() % (MAX_GAME_X - 2) + 1;
+    ranX = rand() % (MAX_GAME_X - 2) + 1; // tránh sát biên
     ranY = rand() % (MAX_GAME_Y - 2) + 1;
+    
+    // tránh đè thân rắn
     for (int i = 0; i < snakeLength; i++) {
       if (ranX == snakeX[i] && ranY == snakeY[i]) { flag = 0; break; }
     }
+    // tránh đè vật cản map
     if (flag && isObstacle(ranX, ranY, currentMap)) {
       flag = 0;
     }
+    // tránh đè cổng portal ở map 6
     if (flag && currentMap == 6) {
       if ((ranX == PORTAL1_X && ranY == PORTAL1_Y) ||
           (ranX == PORTAL2_X && ranY == PORTAL2_Y)) {
         flag = 0;
       }
     }
+    // tránh trùng thức ăn khác
     if (flag) {
       for (int f = 0; f < MAX_FOOD; f++) {
         if (f != slot && foodActive[f] && foodX[f] == ranX && foodY[f] == ranY) {
@@ -607,33 +603,39 @@ void spawnFoodAt(int slot)
       }
     }
   } while (!flag);
+  
   foodX[slot] = ranX;
   foodY[slot] = ranY;
-  foodTicksLeft[slot] = FOOD_LIFETIME_TICKS;
+  foodTicksLeft[slot] = FOOD_LIFETIME_TICKS; // reset thời gian sống
   foodActive[slot] = 1;
 
+  // ngẫu nhiên loại thức ăn
   int r = rand() % 100;
-  if (r < 12)      foodType[slot] = 1; /* 12%: bonus (+5 pts) */
-  else if (r < 22) foodType[slot] = 2; /* 10%: speed boost (temporary) */
-  else if (r < 30) foodType[slot] = 3; /*  8%: shrink (-2 length, min 3) */
-  else             foodType[slot] = 0; /* 70%: normal */
+  if (r < 12)      foodType[slot] = 1; // 12% thức ăn bonus (+5)
+  else if (r < 22) foodType[slot] = 2; // 10% tăng tốc
+  else if (r < 30) foodType[slot] = 3; // 8% co ngắn
+  else             foodType[slot] = 0; // 70% thường
 }
 
 void moveSnake(void)
 {
-  tailX = snakeX[snakeLength - 1];
+  tailX = snakeX[snakeLength - 1]; // giữ lại đuôi cũ
   tailY = snakeY[snakeLength - 1];
 
+  // dịch chuyển tọa độ các đốt thân
   for (int i = snakeLength - 1; i > 0; i--) {
     snakeX[i] = snakeX[i-1];
     snakeY[i] = snakeY[i-1];
   }
+  
+  // đi xuyên màn hình dựa theo modulo
   if (snakeDir == 0) snakeY[0] = (snakeY[0] - 1 + MAX_GAME_Y) % MAX_GAME_Y;
   else if (snakeDir == 1) snakeX[0] = (snakeX[0] + 1) % MAX_GAME_X;
   else if (snakeDir == 2) snakeY[0] = (snakeY[0] + 1) % MAX_GAME_Y;
   else if (snakeDir == 3) snakeX[0] = (snakeX[0] - 1 + MAX_GAME_X) % MAX_GAME_X;
-  lastAppliedDir = snakeDir; /* direction actually reflected in the body layout */
+  lastAppliedDir = snakeDir; // lưu lại hướng thực tế vừa di chuyển
 
+  // xử lý cổng dịch chuyển không gian ở map 6
   if (currentMap == 6) {
     if (snakeX[0] == PORTAL1_X && snakeY[0] == PORTAL1_Y) {
       snakeX[0] = PORTAL2_X;
@@ -681,18 +683,18 @@ static void BeginCountdown(void)
 int checkCollision(void)
 {
   if (isObstacle(snakeX[0], snakeY[0], currentMap)) {
-    return 0; /* Collided with wall */
+    return 0; /* Đâm vào tường vật cản */
   }
   for (int i = 1; i < snakeLength; i++) {
-    if (snakeX[0] == snakeX[i] && snakeY[0] == snakeY[i]) return 0; /* Bit itself */
+    if (snakeX[0] == snakeX[i] && snakeY[0] == snakeY[i]) return 0; /* Tự cắn thân */
   }
   for (int f = 0; f < MAX_FOOD; f++) {
     if (foodActive[f] && snakeX[0] == foodX[f] && snakeY[0] == foodY[f]) {
       lastEatenFoodSlot = f;
-      return 2; /* Ate food */
+      return 2; /* Đã ăn thức ăn */
     }
   }
-  return 1; /* Normal move */
+  return 1; /* Di chuyển bình thường */
 }
 
 /**
@@ -713,31 +715,31 @@ int main(void)
   JoystickCalibrateCenter();
   Flash_LoadHighScore();
 
-  /* Initialize SDRAM */
+  /* Khởi tạo bộ nhớ ngoài SDRAM */
   FMC_SDRAM_CommandTypeDef command;
   BSP_SDRAM_Initialization_Sequence(&hsdram1, &command);
 
-  /* Initialize LCD via LTDC and ILI9341 */
+  /* Khởi tạo LCD qua LTDC và chip ILI9341 */
   MX_LTDC_Init();
 
-  /* Initialize touch screen */
+  /* Khởi tạo màn hình cảm ứng */
   BSP_TS_Init(LCD_W, LCD_H);
 
-  // Clear screen
+  // xóa màn hình
   LCD_Clear(COLOR_BLACK);
 
-  // Show startup menu screen
+  // vẽ màn hình menu khởi động
   drawMenuScreen();
   drawControlPanel();
 
   srand(HAL_GetTick());
-  gameStatus = 0; /* Start in Menu state */
+  gameStatus = 0; /* Thiết lập trạng thái ban đầu là Menu */
 
-  /* Create Mutex */
+  /* Tạo khóa Mutex */
   osMutexDef(gameMutex);
   gameMutexHandle = osMutexCreate(osMutex(gameMutex));
 
-  /* Create Tasks */
+  /* Tạo các tác vụ FreeRTOS */
   osThreadDef(gameTask, StartGameTask, osPriorityNormal, 0, 512);
   gameTaskHandle = osThreadCreate(osThread(gameTask), NULL);
 
@@ -755,19 +757,18 @@ int main(void)
   while (1) {}
 }
 
-/* ---------- FreeRTOS Tasks ---------- */
+/* ---------- Các tác vụ FreeRTOS ---------- */
 void StartGameTask(void const * argument)
 {
   uint32_t lastTick = osKernelSysTick();
   Sound_Play(SOUND_STARTUP);
   for(;;)
   {
-    HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_14); /* Toggle Red LED for alive status */
+    HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_14); /* Nhấp nháy LED đỏ báo hiệu vi điều khiển đang chạy */
     osDelay(250);
     
     if (gameStatus == 1) {
-      /* Expire stale pellets so no single pellet is mandatory - one that
-         sits uneaten for too long vanishes and relocates on its own. */
+      /* Hủy kích hoạt mồi cũ khi quá hạn và sinh mồi mới. */
       osMutexWait(gameMutexHandle, osWaitForever);
       for (int f = 0; f < MAX_FOOD; f++) {
         if (foodActive[f]) {
@@ -797,9 +798,8 @@ void StartGameTask(void const * argument)
         uint8_t needSave = 0;
         if (collision == 0) {
           uint8_t achievedHighScore = highScoreDirty;
-          gameStatus = 2; /* Game over */
-          /* Game over invalidates any paused-game snapshot. Persist even when
-             the high score did not change so CONTINUE cannot revive it. */
+          gameStatus = 2; /* Thua game */
+          /* Xóa game đã lưu khi thua cuộc để tránh khôi phục chơi tiếp. */
           needSave = 1;
           highScoreDirty = 0;
           Sound_Play(achievedHighScore ? SOUND_HIGH_SCORE : SOUND_GAME_OVER);
@@ -807,20 +807,20 @@ void StartGameTask(void const * argument)
           int slot = lastEatenFoodSlot;
           int eatenType = foodType[slot];
           switch (eatenType) {
-            case 1: /* bonus */
+            case 1: /* ăn mồi bonus */
               Sound_Play(SOUND_BONUS);
               score += 5;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
               snakeLength++;
               break;
-            case 2: /* speed boost */
+            case 2: /* ăn mồi tăng tốc */
               Sound_Play(SOUND_SPEED_BOOST);
               score++;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
               snakeLength++;
               speedBoostTicks = SPEED_BOOST_DURATION_TICKS;
               break;
-            case 3: /* shrink */
+            case 3: /* ăn mồi co ngắn thân */
               Sound_Play(SOUND_SHRINK);
               score++;
               {
@@ -833,7 +833,7 @@ void StartGameTask(void const * argument)
                 snakeLength = newLen;
               }
               break;
-            default: /* normal */
+            default: /* ăn mồi thường */
               Sound_Play(SOUND_EAT);
               score++;
               snakeX[snakeLength] = tailX; snakeY[snakeLength] = tailY;
@@ -898,36 +898,36 @@ void StartDisplayTask(void const * argument)
     if (currentStatus != lastStatus)
     {
       lastStatus = currentStatus;
-      if (currentStatus == 0) // Menu
+      if (currentStatus == 0) // giao diện menu
       {
         drawMenuScreen();
         drawControlPanel();
         lastMap = currentMap;
         lastDifficulty = difficulty;
         lastColorIdx = currentColorIdx;
-        requestJoyRecalibrate = 1; /* re-center joystick fresh each time Menu is shown */
+        requestJoyRecalibrate = 1; /* hiệu chuẩn lại tâm Joystick mỗi khi vào Menu */
       }
-      else if (currentStatus == 2) // Game Over
+      else if (currentStatus == 2) // kết thúc game
       {
         drawGameOverScreen();
         drawControlPanel();
       }
-      else if (currentStatus == 1) // Just started playing, or resumed from Pause
+      else if (currentStatus == 1) // trạng thái đang chơi hoặc tiếp tục sau khi tạm dừng
       {
         drawMap(currentMap);
         drawControlPanel();
         lastScore = score;
         lastGameSpeed = gameSpeed;
       }
-      else if (currentStatus == 3) // Paused
+      else if (currentStatus == 3) // tạm dừng
       {
         drawPausedOverlay();
       }
-      else if (currentStatus == 4) // Help
+      else if (currentStatus == 4) // trợ giúp
       {
         drawHelpScreen();
       }
-      else if (currentStatus == 5) // Countdown before start/resume
+      else if (currentStatus == 5) // đếm ngược trước khi bắt đầu
       {
         drawMap(currentMap);
         drawControlPanel();
@@ -939,28 +939,28 @@ void StartDisplayTask(void const * argument)
     {
       osMutexWait(gameMutexHandle, osWaitForever);
       
-      // Clear old tail
+      // xóa đuôi cũ
       if (tailX * PIXEL_SIZE < 240 && tailY * PIXEL_SIZE < 240)
       {
         LCD_FillRect(tailX * PIXEL_SIZE, tailY * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_BLACK);
       }
 
-      // Clear cells vacated by shrink-food or an expired pellet - nothing
-      // else will get redrawn over these this frame, so they need this
-      // explicit blackout or a "ghost" square would linger on screen.
+      // xóa ô trống khi thức ăn hết hạn hoặc rắn co ngắn
+      // xóa các điểm trống để tránh để lại vết trên màn hình
+      // xóa vết đen để tránh hiện tượng bóng ma
       for (int c = 0; c < pendingClearCount; c++)
       {
         LCD_FillRect(pendingClearX[c] * PIXEL_SIZE, pendingClearY[c] * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_BLACK);
       }
       pendingClearCount = 0;
 
-      // Draw snake
+      // vẽ rắn
       for (int i = 0; i < snakeLength; i++) {
         uint16_t color = (i == 0) ? COLOR_YELLOW : snakeColors[currentColorIdx];
         LCD_FillRect(snakeX[i] * PIXEL_SIZE, snakeY[i] * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, color);
       }
 
-      // Draw all active food pellets (color indicates type: normal/bonus/speed/shrink)
+      // vẽ các viên thức ăn đang hoạt động
       for (int f = 0; f < MAX_FOOD; f++) {
         if (foodActive[f]) {
           uint16_t foodColor = (foodType[f] == 1) ? COLOR_ORANGE :
@@ -970,7 +970,7 @@ void StartDisplayTask(void const * argument)
         }
       }
       
-      // Update score if it changed
+      // cập nhật điểm số nếu thay đổi
       if (score != lastScore)
       {
         lastScore = score;
@@ -979,12 +979,12 @@ void StartDisplayTask(void const * argument)
         LCD_DrawString(180, 248, scoreBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
       }
 
-      // Update speed if it changed
+      // cập nhật tốc độ nếu thay đổi
       if (gameSpeed != lastGameSpeed)
       {
         lastGameSpeed = gameSpeed;
         char spdBuf[8];
-        sprintf(spdBuf, "%-3d", gameSpeed); // pad with spaces in case it goes from 100 to 90
+        sprintf(spdBuf, "%-3d", gameSpeed); // đệm khoảng trắng để tránh lỗi hiển thị khi giảm số chữ số
         LCD_DrawString(180, 305, spdBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
       }
       
@@ -999,7 +999,7 @@ void StartDisplayTask(void const * argument)
     }
     else if (currentStatus == 0)
     {
-      // In menu: update map number if it changed
+      // cập nhật số map trong menu nếu thay đổi
       if (currentMap != lastMap)
       {
         lastMap = currentMap;
@@ -1007,7 +1007,7 @@ void StartDisplayTask(void const * argument)
         sprintf(mapBuf, "< MAP %d >", currentMap);
         LCD_DrawString(70, 95, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
         
-        // Also update control panel map number
+        // cập nhật số bản đồ dưới thanh trạng thái
         sprintf(mapBuf, "%02d", currentMap);
         LCD_DrawString(180, 288, mapBuf, &Font12, COLOR_WHITE, COLOR_DARKGRAY);
       }
@@ -1054,10 +1054,10 @@ void StartInputTask(void const * argument)
 
     int joyDir = ReadJoystickDirection();
     uint8_t buttonState = (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET);
-    uint8_t buttonPressed = (buttonState && !lastButtonState); /* rising edge */
+    uint8_t buttonPressed = (buttonState && !lastButtonState); /* sườn lên nút bấm */
     lastButtonState = buttonState;
 
-    if (gameStatus == 1) // Playing state
+    if (gameStatus == 1) // trạng thái đang chơi
     {
       osMutexWait(gameMutexHandle, osWaitForever);
       if (inputDetected && y >= 240)
@@ -1075,17 +1075,16 @@ void StartInputTask(void const * argument)
           if (lastAppliedDir != 3) snakeDir = 1;
         }
       }
-      // Joystick direction (Up/Right/Down/Left), blocked from reversing onto the
-      // snake's actual current heading (not the possibly-already-changed snakeDir,
-      // which could be flipped twice within one movement tick otherwise)
+      // kiểm tra hướng joystick và chặn quay đầu 180 độ
+      // hướng thực tế của rắn
+      // tránh quay đầu 180 độ trong 1 tick
       if (joyDir == 0 && lastAppliedDir != 2) snakeDir = 0;
       else if (joyDir == 1 && lastAppliedDir != 3) snakeDir = 1;
       else if (joyDir == 2 && lastAppliedDir != 0) snakeDir = 2;
       else if (joyDir == 3 && lastAppliedDir != 1) snakeDir = 3;
       if (buttonPressed) {
-        gameStatus = 3; /* Pause */
-        /* Save while holding the game mutex so movement cannot modify the
-           snapshot during the Flash erase/program operation. */
+        gameStatus = 3; /* Tạm dừng game */
+        /* Lưu trạng thái game vào Flash khi tạm dừng dưới sự bảo vệ của Mutex. */
         Flash_SavePausedGame();
       }
       osMutexRelease(gameMutexHandle);
@@ -1094,21 +1093,21 @@ void StartInputTask(void const * argument)
       }
       if (buttonPressed) osDelay(200);
     }
-    else if (gameStatus == 3) // Paused state
+    else if (gameStatus == 3) // tạm dừng state
     {
       if (buttonPressed)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
-        BeginCountdown(); /* Resume after 3-2-1 */
+        BeginCountdown(); /* Tiếp tục sau đếm ngược 3-2-1 */
         osMutexRelease(gameMutexHandle);
         osDelay(200);
       }
     }
-    else if (gameStatus == 0) // Menu state
+    else if (gameStatus == 0) // giao diện menu state
     {
       if (inputDetected)
       {
-        // Touch on START button: discard an older save and start fresh.
+        // chạm nút START để chơi mới
         if (x >= 15 && x <= 110 && y >= 170 && y <= 197)
         {
           Flash_ClearSavedGame();
@@ -1117,14 +1116,14 @@ void StartInputTask(void const * argument)
           BeginCountdown();
           osMutexRelease(gameMutexHandle);
         }
-        // Touch on CONTINUE button: restore the paused game from Flash.
+        // chạm nút CONTINUE để khôi phục game
         else if (x >= 130 && x <= 225 && y >= 170 && y <= 197 && savedGameAvailable)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
           if (Flash_RestoreSavedGame()) BeginCountdown();
           osMutexRelease(gameMutexHandle);
         }
-        // Touch on D-pad LEFT to cycle map down
+        // chạm nút LEFT giảm số bản đồ
         else if (x >= 10 && x <= 38 && y >= 265 && y <= 295)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
@@ -1134,7 +1133,7 @@ void StartInputTask(void const * argument)
           Sound_Play(SOUND_SELECT);
           osDelay(200);
         }
-        // Touch on D-pad RIGHT to cycle map up
+        // chạm nút RIGHT tăng số bản đồ
         else if (x >= 72 && x <= 100 && y >= 265 && y <= 295)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
@@ -1144,7 +1143,7 @@ void StartInputTask(void const * argument)
           Sound_Play(SOUND_SELECT);
           osDelay(200);
         }
-        // Touch on D-pad UP to increase difficulty
+        // chạm nút UP tăng độ khó
         else if (x >= 35 && x <= 75 && y >= 240 && y <= 268)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
@@ -1155,7 +1154,7 @@ void StartInputTask(void const * argument)
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
-        // Touch on D-pad DOWN to decrease difficulty
+        // chạm nút DOWN giảm độ khó
         else if (x >= 35 && x <= 75 && y >= 292 && y <= 320)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
@@ -1166,14 +1165,14 @@ void StartInputTask(void const * argument)
           osMutexRelease(gameMutexHandle);
           osDelay(200);
         }
-        // Touch on HELP button
+        // chạm nút HELP
         else if (x >= 70 && x <= 170 && y >= 210 && y <= 235)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
           gameStatus = 4;
           osMutexRelease(gameMutexHandle);
           Sound_Play(SOUND_SELECT);
-          // Wait for user to release touch so the help screen doesn't instantly close
+          // đợi thả tay để tránh đóng màn hình help lập tức
           while (1)
           {
             BSP_TS_GetState(&TS_State);
@@ -1181,7 +1180,7 @@ void StartInputTask(void const * argument)
             osDelay(20);
           }
         }
-        // Touch on COLOR text
+        // chạm vào chữ COLOR để đổi màu rắn
         else if (x >= 40 && x <= 200 && y >= 130 && y <= 160)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
@@ -1190,7 +1189,7 @@ void StartInputTask(void const * argument)
           osDelay(200);
         }
       }
-      // Joystick Left/Right cycles map, Up/Down cycles difficulty, button (PA0) starts the game
+      // dùng joystick để chọn map, độ khó hoặc nút PA0 để bắt đầu
       if (joyDir == 3)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
@@ -1238,18 +1237,18 @@ void StartInputTask(void const * argument)
         osMutexRelease(gameMutexHandle);
       }
     }
-    else if (gameStatus == 2) // Game Over state
+    else if (gameStatus == 2) // kết thúc game state
     {
       if (inputDetected)
       {
-        // Touch on MENU button
+        // chạm nút MENU
         if (x >= 70 && x <= 170 && y >= 170 && y <= 200)
         {
           osMutexWait(gameMutexHandle, osWaitForever);
           gameStatus = 0;
           osMutexRelease(gameMutexHandle);
           Sound_Play(SOUND_SELECT);
-          // Wait for user to release touch so they don't immediately trigger START/CONTINUE on the Menu screen
+          // đợi thả tay để tránh chạm nhầm khi về menu
           while (1)
           {
             BSP_TS_GetState(&TS_State);
@@ -1259,7 +1258,7 @@ void StartInputTask(void const * argument)
           osDelay(200);
         }
       }
-      // Joystick button (PA0) returns to menu
+      // nút joystick PA0 để quay về menu
       if (buttonPressed)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
@@ -1269,16 +1268,16 @@ void StartInputTask(void const * argument)
         osDelay(200);
       }
     }
-    else if (gameStatus == 4) // Help screen
+    else if (gameStatus == 4) // trợ giúp screen
     {
-      // Any tap or the joystick button returns to Menu
+      // nhấn bất kỳ hoặc nút joystick để quay lại menu
       if (inputDetected || buttonPressed)
       {
         osMutexWait(gameMutexHandle, osWaitForever);
         gameStatus = 0;
         osMutexRelease(gameMutexHandle);
         Sound_Play(SOUND_SELECT);
-        // Wait for user to release touch if exiting via tap
+        // đợi thả tay khi thoát bằng chạm màn hình
         if (inputDetected)
         {
           while (1)
@@ -1295,11 +1294,11 @@ void StartInputTask(void const * argument)
   }
 }
 
-/* ---------- Non-blocking sound service for an active buzzer ---------- */
+/* ---------- Dịch vụ còi buzzer phát âm thanh bất đồng bộ ---------- */
 static void Sound_Play(SoundEvent event)
 {
-  /* A newer event replaces one that has not started yet. The sound task owns
-     all delays, so game/input/display tasks are never blocked by a beep. */
+  /* Sự kiện âm thanh mới đè lên âm thanh cũ. Sound task độc lập
+     nên không gây nghẽn các tác vụ khác. */
   pendingSound = event;
 }
 
@@ -1381,7 +1380,7 @@ void StartSoundTask(void const * argument)
   }
 }
 
-/* ---------- System Clock ---------- */
+/* ---------- Cấu hình xung nhịp hệ thống ---------- */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -1420,7 +1419,7 @@ void SystemClock_Config(void)
   }
 }
 
-/* ---------- Peripheral Inits ---------- */
+/* ---------- Khởi tạo ngoại vi ---------- */
 static void MX_I2C3_Init(void)
 {
   hi2c3.Instance = I2C3;
@@ -1466,7 +1465,7 @@ static void MX_LTDC_Init(void)
   hltdc.Init.Backcolor.Red = 0;
   HAL_LTDC_Init(&hltdc);
 
-  /* Configure Layer 0 with RGB565 */
+  /* Cấu hình Layer 0 chuẩn màu RGB565 */
   pLayerCfg.WindowX0 = 0;
   pLayerCfg.WindowX1 = LCD_W - 1;
   pLayerCfg.WindowY0 = 0;
@@ -1506,7 +1505,7 @@ static void MX_ADC1_Init(void)
     Error_Handler();
   }
 
-  sConfig.Channel = ADC_CHANNEL_13; /* PC3 -> joystick Y (VRy) */
+  sConfig.Channel = ADC_CHANNEL_13; /* Chân PC3 tương ứng VRy Joystick */
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
@@ -1535,7 +1534,7 @@ static void MX_ADC2_Init(void)
     Error_Handler();
   }
 
-  sConfig.Channel = ADC_CHANNEL_5; /* PA5 -> joystick X (VRx) */
+  sConfig.Channel = ADC_CHANNEL_5; /* Chân PA5 tương ứng VRx Joystick */
   sConfig.Rank = 1;
   sConfig.SamplingTime = ADC_SAMPLETIME_15CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc2, &sConfig) != HAL_OK)
@@ -1596,20 +1595,20 @@ static void BSP_SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_S
   Command->AutoRefreshNumber       = 1;
   Command->ModeRegisterDefinition  = tmpmrd;
   HAL_SDRAM_SendCommand(hsdram, Command, 0x1000);
-  HAL_SDRAM_ProgramRefreshRate(hsdram, 683); /* REFRESH_COUNT */
+  HAL_SDRAM_ProgramRefreshRate(hsdram, 683); /* Chu kỳ tự làm tươi của SDRAM */
 }
 
-/* ---------- Touch Screen (from SimpleRacing) ---------- */
+/* ---------- Màn hình cảm ứng (cấu hình STMPE811) ---------- */
 uint8_t BSP_TS_Init(uint16_t XSize, uint16_t YSize)
 {
-  uint8_t ret = 1; /* ERROR */
+  uint8_t ret = 1; /* LỖI */
   TsXBoundary = XSize;
   TsYBoundary = YSize;
 
   if (stmpe811_ts_drv.ReadID(TS_I2C_ADDRESS) == STMPE811_ID)
   {
       TsDrv = &stmpe811_ts_drv;
-      ret = 0; /* OK */
+      ret = 0; /* THÀNH CÔNG */
   }
 
   if (ret == 0)
@@ -1671,12 +1670,11 @@ void BSP_TS_GetState(TS_StateTypeDef* TsState)
   }
 }
 
-/* ---------- High score + paused game persistence (Flash Bank2 Sector 12) -----
-   Writes happen only on Pause, New Game and Game Over. A version and checksum
-   reject incomplete/corrupt records after an interrupted Flash operation. */
+/* ---------- Lưu trữ điểm cao và trạng thái game vào Flash Sector 12 -----
+   Ghi khi Tạm dừng, Chơi mới và Game Over. Sử dụng checksum để xác thực tính toàn vẹn. */
 #define HS_FLASH_ADDR   0x08100000U
 #define HS_FLASH_SECTOR FLASH_SECTOR_12
-#define HS_FLASH_MAGIC  0x534E414BU /* 'SNAK' */
+#define HS_FLASH_MAGIC  0x534E414BU /* mã nhận diện 'SNAK' */
 #define SAVE_VERSION    2U
 
 typedef struct {
@@ -1800,7 +1798,7 @@ static void Flash_LoadHighScore(void)
                          persistBuffer.currentMap >= 1 && persistBuffer.currentMap <= 6 &&
                          persistBuffer.difficulty >= 0 && persistBuffer.difficulty < DIFF_COUNT;
   } else {
-    /* Compatibility with the original two-word high-score record. */
+    /* Tương thích với bản ghi điểm cao cũ. */
     const uint32_t *oldRecord = (const uint32_t *)HS_FLASH_ADDR;
     highScore = (oldRecord[0] == HS_FLASH_MAGIC && oldRecord[2] == 0xFFFFFFFFU)
                   ? (int)oldRecord[1] : 0;
@@ -1854,7 +1852,7 @@ static uint8_t Flash_RestoreSavedGame(void)
   return 1;
 }
 
-/* ---------- Joystick (analog VRx/VRy + onboard PA0 button) ---------- */
+/* ---------- Cần gạt Joystick (analog VRx/VRy + nút nhấn PA0) ---------- */
 static uint16_t ADC_ReadChannel(ADC_HandleTypeDef *hadc)
 {
   uint16_t value = 0;
@@ -1867,24 +1865,23 @@ static uint16_t ADC_ReadChannel(ADC_HandleTypeDef *hadc)
   return value;
 }
 
-/* Capture the resting (centered) stick position so mechanical offset
-   between units doesn't bias direction detection. */
+/* Đọc vị trí trung tâm (trạng thái nghỉ) để tránh sai lệch cơ học. */
 static void JoystickCalibrateCenter(void)
 {
   joyXCenter = ADC_ReadChannel(&hadc2);
   joyYCenter = ADC_ReadChannel(&hadc1);
 }
 
-/* Returns 0:Up, 1:Right, 2:Down, 3:Left, -1:Neutral (within deadzone) */
+/* Trả về hướng: 0:Lên, 1:Phải, 2:Xuống, 3:Trái, -1:Nghỉ (trong deadzone) */
 static int ReadJoystickDirection(void)
 {
   int16_t dx = (int16_t)ADC_ReadChannel(&hadc2) - (int16_t)joyXCenter;
   int16_t dy = (int16_t)ADC_ReadChannel(&hadc1) - (int16_t)joyYCenter;
 
-  if (dx > JOY_DEADZONE)       return 1; /* Right */
-  else if (dx < -JOY_DEADZONE) return 3; /* Left  */
-  else if (dy > JOY_DEADZONE)  return 2; /* Down  */
-  else if (dy < -JOY_DEADZONE) return 0; /* Up    */
+  if (dx > JOY_DEADZONE)       return 1; /* Hướng Phải */
+  else if (dx < -JOY_DEADZONE) return 3; /* Hướng Trái */
+  else if (dy > JOY_DEADZONE)  return 2; /* Hướng Xuống */
+  else if (dy < -JOY_DEADZONE) return 0; /* Hướng Lên */
   return -1;
 }
 
@@ -1901,7 +1898,7 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOG_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
-  /* LCD NCS (PC2) */
+  /* Chân chọn chip LCD NCS (PC2) */
   GPIOC->BSRR = (1UL << 2);
   GPIO_InitStruct.Pin = GPIO_PIN_2;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -1909,26 +1906,25 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
   HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
-  /* LCD WRX (PD13), RDX (PD12) */
+  /* Các chân điều khiển LCD: WRX (PD13), RDX (PD12) */
   GPIOD->BSRR = (1UL << 12) | (1UL << 13);
   GPIO_InitStruct.Pin = GPIO_PIN_12 | GPIO_PIN_13;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-  /* LED (PG14) */
+  /* LED báo trạng thái (PG14) */
   GPIO_InitStruct.Pin = GPIO_PIN_14;
   HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
 
   /* Joystick VRx (PA5)/VRy (PC3) analog GPIO is configured by HAL_ADC_MspInit()
      (auto-generated in stm32f4xx_hal_msp.c) when MX_ADC1_Init/MX_ADC2_Init run. */
 
-  /* Joystick Select button - reuse onboard User button (PA0) */
+  /* Nút nhấn Joystick - sử dụng lại nút USER (PA0) trên board */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /* PC4 drives the base resistor of an external NPN buzzer transistor.
-     Keep it low at startup so the buzzer remains off. */
+  /* Chân PC4 lái Transistor của còi Buzzer. Giữ mức LOW khi khởi động để tắt còi. */
   HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
   GPIO_InitStruct.Pin = BUZZER_GPIO_PIN;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;

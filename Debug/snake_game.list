@@ -29,25 +29,25 @@ Idx Name          Size      VMA       LMA       File off  Algn
                   ALLOC
  12 .ARM.attributes 00000030  00000000  00000000  0001210c  2**0
                   CONTENTS, READONLY
- 13 .debug_info   0001c565  00000000  00000000  0001213c  2**0
+ 13 .debug_info   0001c55c  00000000  00000000  0001213c  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 14 .debug_abbrev 00004450  00000000  00000000  0002e6a1  2**0
+ 14 .debug_abbrev 00004452  00000000  00000000  0002e698  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 15 .debug_aranges 00001e68  00000000  00000000  00032af8  2**3
+ 15 .debug_aranges 00001e68  00000000  00000000  00032af0  2**3
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 16 .debug_rnglists 00001794  00000000  00000000  00034960  2**0
+ 16 .debug_rnglists 00001794  00000000  00000000  00034958  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 17 .debug_macro  0002a06e  00000000  00000000  000360f4  2**0
+ 17 .debug_macro  0002a06a  00000000  00000000  000360ec  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 18 .debug_line   000210cc  00000000  00000000  00060162  2**0
+ 18 .debug_line   000210cc  00000000  00000000  00060156  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 19 .debug_str    000feb22  00000000  00000000  0008122e  2**0
+ 19 .debug_str    000feb22  00000000  00000000  00081222  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 20 .comment      00000043  00000000  00000000  0017fd50  2**0
+ 20 .comment      00000043  00000000  00000000  0017fd44  2**0
                   CONTENTS, READONLY
- 21 .debug_frame  000086bc  00000000  00000000  0017fd94  2**2
+ 21 .debug_frame  000086bc  00000000  00000000  0017fd88  2**2
                   CONTENTS, READONLY, DEBUGGING, OCTETS
- 22 .debug_line_str 00000056  00000000  00000000  00188450  2**0
+ 22 .debug_line_str 00000056  00000000  00000000  00188444  2**0
                   CONTENTS, READONLY, DEBUGGING, OCTETS
 
 Disassembly of section .text:
@@ -435,7 +435,7 @@ Disassembly of section .text:
 void StartSoundTask(void const * argument);
 static void Sound_Play(SoundEvent event);
 
-/* ---------- Direct framebuffer drawing helpers (RGB565) ---------- */
+/* ---------- Hàm vẽ trực tiếp lên Framebuffer (RGB565) ---------- */
 static inline void LCD_DrawPixel(uint16_t x, uint16_t y, uint16_t color)
 {
  80005bc:	b480      	push	{r7}
@@ -813,7 +813,7 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
  800082c:	71bb      	strb	r3, [r7, #6]
  800082e:	4613      	mov	r3, r2
  8000830:	717b      	strb	r3, [r7, #5]
-  // Outer walls boundary
+  // tường bao quanh
   if (x == 0 || x == MAX_GAME_X - 1 || y == 0 || y == MAX_GAME_Y - 1)
  8000832:	79fb      	ldrb	r3, [r7, #7]
  8000834:	2b00      	cmp	r3, #0
@@ -833,7 +833,7 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
  800084c:	e060      	b.n	8000910 <isObstacle+0xf0>
   }
   
-  if (map_id == 1) // Map 1: Empty (Classic)
+  if (map_id == 1) // bản đồ 1: cổ điển (trống)
  800084e:	797b      	ldrb	r3, [r7, #5]
  8000850:	2b01      	cmp	r3, #1
  8000852:	d101      	bne.n	8000858 <isObstacle+0x38>
@@ -842,14 +842,14 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
  8000854:	2300      	movs	r3, #0
  8000856:	e05b      	b.n	8000910 <isObstacle+0xf0>
   }
-  else if (map_id == 2) // Map 2: Center Box
+  else if (map_id == 2) // bản đồ 2: hộp trung tâm
  8000858:	797b      	ldrb	r3, [r7, #5]
  800085a:	2b02      	cmp	r3, #2
  800085c:	d10d      	bne.n	800087a <isObstacle+0x5a>
   {
-    // Solid square in the middle: rows/cols 8 to 15 (filled, not just the
-    // outline - a hollow outline traps unreachable cells inside it, and food
-    // could spawn there with no way for the snake to ever reach it)
+    // khối vuông đặc ở giữa từ hàng/cột 8 đến 15
+    // vẽ viền rỗng
+    // tránh sinh mồi ở nơi không thể ăn được
     if (x >= 8 && x <= 15 && y >= 8 && y <= 15)
  800085e:	79fb      	ldrb	r3, [r7, #7]
  8000860:	2b07      	cmp	r3, #7
@@ -869,12 +869,12 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
  8000878:	e04a      	b.n	8000910 <isObstacle+0xf0>
     }
   }
-  else if (map_id == 3) // Map 3: Four Corners
+  else if (map_id == 3) // bản đồ 3: bốn góc
  800087a:	797b      	ldrb	r3, [r7, #5]
  800087c:	2b03      	cmp	r3, #3
  800087e:	d119      	bne.n	80008b4 <isObstacle+0x94>
   {
-    // Obstacles at corners
+    // vật cản ở 4 góc
     if (((x >= 4 && x <= 6) || (x >= 17 && x <= 19)) &&
  8000880:	79fb      	ldrb	r3, [r7, #7]
  8000882:	2b03      	cmp	r3, #3
@@ -907,12 +907,12 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
  80008b2:	e02d      	b.n	8000910 <isObstacle+0xf0>
     }
   }
-  else if (map_id == 4) // Map 4: Vertical Pillars
+  else if (map_id == 4) // bản đồ 4: cột thẳng đứng
  80008b4:	797b      	ldrb	r3, [r7, #5]
  80008b6:	2b04      	cmp	r3, #4
  80008b8:	d10d      	bne.n	80008d6 <isObstacle+0xb6>
   {
-    // Two vertical walls: col 6 and col 17, from row 5 to 18
+    // hai cột đứng ở cột 6 và 17 từ dòng 5 đến 18
     if ((x == 6 || x == 17) && (y >= 5 && y <= 18))
  80008ba:	79fb      	ldrb	r3, [r7, #7]
  80008bc:	2b06      	cmp	r3, #6
@@ -932,12 +932,12 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
  80008d4:	e01c      	b.n	8000910 <isObstacle+0xf0>
     }
   }
-  else if (map_id == 5) // Map 5: Cross/Maze
+  else if (map_id == 5) // bản đồ 5: chữ thập trung tâm
  80008d6:	797b      	ldrb	r3, [r7, #5]
  80008d8:	2b05      	cmp	r3, #5
  80008da:	d113      	bne.n	8000904 <isObstacle+0xe4>
   {
-    // A cross in the center
+    // vẽ chữ thập ở giữa
     if ((x == 11 && y >= 4 && y <= 19) || (y == 11 && x >= 4 && x <= 19))
  80008dc:	79fb      	ldrb	r3, [r7, #7]
  80008de:	2b0b      	cmp	r3, #11
@@ -963,12 +963,12 @@ int isObstacle(uint8_t x, uint8_t y, uint8_t map_id)
  8000902:	e005      	b.n	8000910 <isObstacle+0xf0>
     }
   }
-  else if (map_id == 6) // Map 6: Portals
+  else if (map_id == 6) // bản đồ 6: cổng dịch chuyển
  8000904:	797b      	ldrb	r3, [r7, #5]
  8000906:	2b06      	cmp	r3, #6
  8000908:	d101      	bne.n	800090e <isObstacle+0xee>
   {
-    // No wall obstacles in the middle
+    // không có vật cản ở giữa
     return 0;
  800090a:	2300      	movs	r3, #0
  800090c:	e000      	b.n	8000910 <isObstacle+0xf0>
@@ -1132,7 +1132,7 @@ void drawMap(uint8_t map_id)
  8000a1a:	79fb      	ldrb	r3, [r7, #7]
  8000a1c:	2b06      	cmp	r3, #6
  8000a1e:	d121      	bne.n	8000a64 <drawMap+0x148>
-    // Draw portals
+    // vẽ cổng dịch chuyển
     LCD_FillRect(PORTAL1_X * PIXEL_SIZE, PORTAL1_Y * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE, COLOR_PINK);
  8000a20:	f64f 031f 	movw	r3, #63519	@ 0xf81f
  8000a24:	9300      	str	r3, [sp, #0]
@@ -1149,7 +1149,7 @@ void drawMap(uint8_t map_id)
  8000a3c:	2178      	movs	r1, #120	@ 0x78
  8000a3e:	20b4      	movs	r0, #180	@ 0xb4
  8000a40:	f7ff fde0 	bl	8000604 <LCD_FillRect>
-    // Draw a hollow center to make it look like a portal
+    // vẽ tâm rỗng cho cổng portal
     LCD_FillRect(PORTAL1_X * PIXEL_SIZE + 2, PORTAL1_Y * PIXEL_SIZE + 2, PIXEL_SIZE - 4, PIXEL_SIZE - 4, COLOR_BLACK);
  8000a44:	2300      	movs	r3, #0
  8000a46:	9300      	str	r3, [sp, #0]
@@ -1209,7 +1209,7 @@ void drawControlPanel(void)
  8000aa4:	ddf1      	ble.n	8000a8a <drawControlPanel+0x1e>
   }
   
-  // D-PAD Buttons (Up: 45-75, 245-265; Down: 45-75, 295-315; Left: 10-40, 270-290; Right: 80-110, 270-290)
+  // tọa độ nút D-PAD
   LCD_FillRect(45, 245, 30, 20, COLOR_GRAY);
  8000aa6:	f645 23eb 	movw	r3, #23275	@ 0x5aeb
  8000aaa:	9300      	str	r3, [sp, #0]
@@ -1286,7 +1286,7 @@ void drawControlPanel(void)
  8000b54:	205b      	movs	r0, #91	@ 0x5b
  8000b56:	f7ff fe3d 	bl	80007d4 <LCD_DrawString>
 
-  LCD_FillRect(45, 270, 30, 20, COLOR_GRAY); // Center core
+  LCD_FillRect(45, 270, 30, 20, COLOR_GRAY); // khối trung tâm
  8000b5a:	f645 23eb 	movw	r3, #23275	@ 0x5aeb
  8000b5e:	9300      	str	r3, [sp, #0]
  8000b60:	2314      	movs	r3, #20
@@ -1295,7 +1295,7 @@ void drawControlPanel(void)
  8000b68:	202d      	movs	r0, #45	@ 0x2d
  8000b6a:	f7ff fd4b 	bl	8000604 <LCD_FillRect>
 
-  // INFO PANEL
+  // bảng thông tin
   char scoreBuf[16];
   sprintf(scoreBuf, "%02d", score);
  8000b6e:	4b4b      	ldr	r3, [pc, #300]	@ (8000c9c <drawControlPanel+0x230>)
@@ -1441,7 +1441,7 @@ void drawMenuScreen(void)
  8000cc8:	b580      	push	{r7, lr}
  8000cca:	b096      	sub	sp, #88	@ 0x58
  8000ccc:	af02      	add	r7, sp, #8
-  LCD_FillRect(0, 0, 240, 240, COLOR_BLACK);
+  LCD_FillRect(0, 0, 240, 240, COLOR_BLACK); // xóa màn hình nền đen
  8000cce:	2300      	movs	r3, #0
  8000cd0:	9300      	str	r3, [sp, #0]
  8000cd2:	23f0      	movs	r3, #240	@ 0xf0
@@ -1450,7 +1450,7 @@ void drawMenuScreen(void)
  8000cd8:	2000      	movs	r0, #0
  8000cda:	f7ff fc93 	bl	8000604 <LCD_FillRect>
   
-  LCD_DrawString(40, 25, "SNAKE GAME", &Font24, COLOR_YELLOW, COLOR_BLACK);
+  LCD_DrawString(40, 25, "SNAKE GAME", &Font24, COLOR_YELLOW, COLOR_BLACK); // vẽ tiêu đề
  8000cde:	2300      	movs	r3, #0
  8000ce0:	9301      	str	r3, [sp, #4]
  8000ce2:	f64f 73e0 	movw	r3, #65504	@ 0xffe0
@@ -1460,7 +1460,7 @@ void drawMenuScreen(void)
  8000cec:	2119      	movs	r1, #25
  8000cee:	2028      	movs	r0, #40	@ 0x28
  8000cf0:	f7ff fd70 	bl	80007d4 <LCD_DrawString>
-  LCD_DrawString(65, 70, "SELECT MAP", &Font16, COLOR_WHITE, COLOR_BLACK);
+  LCD_DrawString(65, 70, "SELECT MAP", &Font16, COLOR_WHITE, COLOR_BLACK); // nhãn chọn bản đồ
  8000cf4:	2300      	movs	r3, #0
  8000cf6:	9301      	str	r3, [sp, #4]
  8000cf8:	f64f 73ff 	movw	r3, #65535	@ 0xffff
@@ -1479,7 +1479,7 @@ void drawMenuScreen(void)
  8000d12:	496a      	ldr	r1, [pc, #424]	@ (8000ebc <drawMenuScreen+0x1f4>)
  8000d14:	4618      	mov	r0, r3
  8000d16:	f00a fd85 	bl	800b824 <siprintf>
-  LCD_DrawString(70, 95, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK);
+  LCD_DrawString(70, 95, mapBuf, &Font16, COLOR_GREEN, COLOR_BLACK); // hiển thị bản đồ hiện tại
  8000d1a:	f107 0234 	add.w	r2, r7, #52	@ 0x34
  8000d1e:	2300      	movs	r3, #0
  8000d20:	9301      	str	r3, [sp, #4]
@@ -1500,7 +1500,7 @@ void drawMenuScreen(void)
  8000d40:	4961      	ldr	r1, [pc, #388]	@ (8000ec8 <drawMenuScreen+0x200>)
  8000d42:	4618      	mov	r0, r3
  8000d44:	f00a fd6e 	bl	800b824 <siprintf>
-  LCD_DrawString(60, 125, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK);
+  LCD_DrawString(60, 125, diffBuf, &Font12, COLOR_CYAN, COLOR_BLACK); // hiển thị độ khó
  8000d48:	f107 021c 	add.w	r2, r7, #28
  8000d4c:	2300      	movs	r3, #0
  8000d4e:	9301      	str	r3, [sp, #4]
@@ -1521,7 +1521,7 @@ void drawMenuScreen(void)
  8000d6c:	495a      	ldr	r1, [pc, #360]	@ (8000ed8 <drawMenuScreen+0x210>)
  8000d6e:	4618      	mov	r0, r3
  8000d70:	f00a fd58 	bl	800b824 <siprintf>
-  LCD_DrawString(60, 142, colBuf, &Font12, COLOR_PINK, COLOR_BLACK);
+  LCD_DrawString(60, 142, colBuf, &Font12, COLOR_PINK, COLOR_BLACK); // hiển thị màu rắn
  8000d74:	1d3a      	adds	r2, r7, #4
  8000d76:	2300      	movs	r3, #0
  8000d78:	9301      	str	r3, [sp, #4]
@@ -1532,7 +1532,7 @@ void drawMenuScreen(void)
  8000d84:	203c      	movs	r0, #60	@ 0x3c
  8000d86:	f7ff fd25 	bl	80007d4 <LCD_DrawString>
 
-  // New game button: X: 15-110, Y: 170-197
+  // vẽ nút START (chơi mới)
   LCD_FillRect(15, 170, 95, 27, COLOR_CYAN);
  8000d8a:	f240 73ff 	movw	r3, #2047	@ 0x7ff
  8000d8e:	9300      	str	r3, [sp, #0]
@@ -1552,7 +1552,7 @@ void drawMenuScreen(void)
  8000dac:	2023      	movs	r0, #35	@ 0x23
  8000dae:	f7ff fd11 	bl	80007d4 <LCD_DrawString>
 
-  // Continue button is enabled only when a valid paused game exists in Flash.
+  // vẽ nút CONTINUE (chơi tiếp)
   uint16_t continueColor = savedGameAvailable ? COLOR_GREEN : COLOR_DARKGRAY;
  8000db2:	4b4b      	ldr	r3, [pc, #300]	@ (8000ee0 <drawMenuScreen+0x218>)
  8000db4:	781b      	ldrb	r3, [r3, #0]
@@ -1591,7 +1591,7 @@ void drawMenuScreen(void)
  8000dfc:	2086      	movs	r0, #134	@ 0x86
  8000dfe:	f7ff fce9 	bl	80007d4 <LCD_DrawString>
 
-  // Help Button: X: 70-170, Y: 210-235
+  // vẽ nút HELP (trợ giúp)
   LCD_FillRect(70, 210, 100, 25, COLOR_GRAY);
  8000e02:	f645 23eb 	movw	r3, #23275	@ 0x5aeb
  8000e06:	9300      	str	r3, [sp, #0]
@@ -2114,7 +2114,7 @@ void drawGameOverScreen(void)
  800123a:	f7ff facb 	bl	80007d4 <LCD_DrawString>
   }
   
-  // Menu Button: X: 70-170, Y: 170-200
+  // giao diện menu Button: X: 70-170, Y: 170-200
   LCD_FillRect(70, 170, 100, 30, COLOR_ORANGE);
  800123e:	f64f 5320 	movw	r3, #64800	@ 0xfd20
  8001242:	9300      	str	r3, [sp, #0]
@@ -2210,15 +2210,15 @@ void drawGameOverScreen(void)
 
 08001304 <LCD_IO_Init>:
 
-/* ---------- LCD IO & IOE (Bypassing BSP) ---------- */
+/* ---------- Giao tiếp LCD & Bộ mở rộng IO ---------- */
 void LCD_IO_Init(void) {
  8001304:	b480      	push	{r7}
  8001306:	af00      	add	r7, sp, #0
-  GPIOC->BSRR = (1UL << 18); /* PC2 LOW */
+  GPIOC->BSRR = (1UL << 18); /* Chân PC2 mức LOW */
  8001308:	4b05      	ldr	r3, [pc, #20]	@ (8001320 <LCD_IO_Init+0x1c>)
  800130a:	f44f 2280 	mov.w	r2, #262144	@ 0x40000
  800130e:	619a      	str	r2, [r3, #24]
-  GPIOC->BSRR = (1UL << 2);  /* PC2 HIGH */
+  GPIOC->BSRR = (1UL << 2);  /* Chân PC2 mức HIGH */
  8001310:	4b03      	ldr	r3, [pc, #12]	@ (8001320 <LCD_IO_Init+0x1c>)
  8001312:	2204      	movs	r2, #4
  8001314:	619a      	str	r2, [r3, #24]
@@ -2236,11 +2236,11 @@ void LCD_IO_WriteData(uint16_t RegValue) {
  8001328:	af00      	add	r7, sp, #0
  800132a:	4603      	mov	r3, r0
  800132c:	80fb      	strh	r3, [r7, #6]
-  GPIOD->BSRR = (1UL << 13); /* PD13 HIGH */
+  GPIOD->BSRR = (1UL << 13); /* Chân PD13 mức HIGH */
  800132e:	4b0b      	ldr	r3, [pc, #44]	@ (800135c <LCD_IO_WriteData+0x38>)
  8001330:	f44f 5200 	mov.w	r2, #8192	@ 0x2000
  8001334:	619a      	str	r2, [r3, #24]
-  GPIOC->BSRR = (1UL << 18); /* PC2 LOW */
+  GPIOC->BSRR = (1UL << 18); /* Chân PC2 mức LOW */
  8001336:	4b0a      	ldr	r3, [pc, #40]	@ (8001360 <LCD_IO_WriteData+0x3c>)
  8001338:	f44f 2280 	mov.w	r2, #262144	@ 0x40000
  800133c:	619a      	str	r2, [r3, #24]
@@ -2250,7 +2250,7 @@ void LCD_IO_WriteData(uint16_t RegValue) {
  8001344:	2201      	movs	r2, #1
  8001346:	4807      	ldr	r0, [pc, #28]	@ (8001364 <LCD_IO_WriteData+0x40>)
  8001348:	f007 fa36 	bl	80087b8 <HAL_SPI_Transmit>
-  GPIOC->BSRR = (1UL << 2);  /* PC2 HIGH */
+  GPIOC->BSRR = (1UL << 2);  /* Chân PC2 mức HIGH */
  800134c:	4b04      	ldr	r3, [pc, #16]	@ (8001360 <LCD_IO_WriteData+0x3c>)
  800134e:	2204      	movs	r2, #4
  8001350:	619a      	str	r2, [r3, #24]
@@ -2271,11 +2271,11 @@ void LCD_IO_WriteReg(uint8_t Reg) {
  800136c:	af00      	add	r7, sp, #0
  800136e:	4603      	mov	r3, r0
  8001370:	71fb      	strb	r3, [r7, #7]
-  GPIOD->BSRR = (1UL << 29); /* PD13 LOW */
+  GPIOD->BSRR = (1UL << 29); /* Chân PD13 mức LOW */
  8001372:	4b0d      	ldr	r3, [pc, #52]	@ (80013a8 <LCD_IO_WriteReg+0x40>)
  8001374:	f04f 5200 	mov.w	r2, #536870912	@ 0x20000000
  8001378:	619a      	str	r2, [r3, #24]
-  GPIOC->BSRR = (1UL << 18); /* PC2 LOW */
+  GPIOC->BSRR = (1UL << 18); /* Chân PC2 mức LOW */
  800137a:	4b0c      	ldr	r3, [pc, #48]	@ (80013ac <LCD_IO_WriteReg+0x44>)
  800137c:	f44f 2280 	mov.w	r2, #262144	@ 0x40000
  8001380:	619a      	str	r2, [r3, #24]
@@ -2289,7 +2289,7 @@ void LCD_IO_WriteReg(uint8_t Reg) {
  8001390:	2201      	movs	r2, #1
  8001392:	4807      	ldr	r0, [pc, #28]	@ (80013b0 <LCD_IO_WriteReg+0x48>)
  8001394:	f007 fa10 	bl	80087b8 <HAL_SPI_Transmit>
-  GPIOC->BSRR = (1UL << 2);  /* PC2 HIGH */
+  GPIOC->BSRR = (1UL << 2);  /* Chân PC2 mức HIGH */
  8001398:	4b04      	ldr	r3, [pc, #16]	@ (80013ac <LCD_IO_WriteReg+0x44>)
  800139a:	2204      	movs	r2, #4
  800139c:	619a      	str	r2, [r3, #24]
@@ -2513,7 +2513,7 @@ uint16_t IOE_ReadMultiple(uint8_t Addr, uint8_t Reg, uint8_t *pBuffer, uint16_t 
 
 08001530 <QueueClear>:
 
-/* ---------- Game logic ---------- */
+/* ---------- Logic Trò chơi ---------- */
 static void QueueClear(int x, int y)
 {
  8001530:	b480      	push	{r7}
@@ -2557,8 +2557,7 @@ static void QueueClear(int x, int y)
 
 0800157c <spawnFoodAt>:
 
-/* Spawns a new pellet into food slot `slot`, avoiding the snake body,
-   obstacles, and every OTHER currently-active food slot. */
+// sinh thức ăn ngẫu nhiên tránh đè lên rắn, vật cản, và các thức ăn khác
 void spawnFoodAt(int slot)
 {
  800157c:	b580      	push	{r7, lr}
@@ -2570,7 +2569,7 @@ void spawnFoodAt(int slot)
     flag = 1;
  8001584:	2301      	movs	r3, #1
  8001586:	61fb      	str	r3, [r7, #28]
-    ranX = rand() % (MAX_GAME_X - 2) + 1;
+    ranX = rand() % (MAX_GAME_X - 2) + 1; // tránh sát biên
  8001588:	f00a f84a 	bl	800b620 <rand>
  800158c:	4602      	mov	r2, r0
  800158e:	4b68      	ldr	r3, [pc, #416]	@ (8001730 <spawnFoodAt+0x1b4>)
@@ -2596,6 +2595,8 @@ void spawnFoodAt(int slot)
  80015be:	1ad3      	subs	r3, r2, r3
  80015c0:	3301      	adds	r3, #1
  80015c2:	60fb      	str	r3, [r7, #12]
+    
+    // tránh đè thân rắn
     for (int i = 0; i < snakeLength; i++) {
  80015c4:	2300      	movs	r3, #0
  80015c6:	61bb      	str	r3, [r7, #24]
@@ -2626,6 +2627,7 @@ void spawnFoodAt(int slot)
  80015f8:	429a      	cmp	r2, r3
  80015fa:	dbe6      	blt.n	80015ca <spawnFoodAt+0x4e>
     }
+    // tránh đè vật cản map
     if (flag && isObstacle(ranX, ranY, currentMap)) {
  80015fc:	69fb      	ldr	r3, [r7, #28]
  80015fe:	2b00      	cmp	r3, #0
@@ -2646,6 +2648,7 @@ void spawnFoodAt(int slot)
  800161c:	2300      	movs	r3, #0
  800161e:	61fb      	str	r3, [r7, #28]
     }
+    // tránh đè cổng portal ở map 6
     if (flag && currentMap == 6) {
  8001620:	69fb      	ldr	r3, [r7, #28]
  8001622:	2b00      	cmp	r3, #0
@@ -2673,6 +2676,7 @@ void spawnFoodAt(int slot)
  8001648:	61fb      	str	r3, [r7, #28]
       }
     }
+    // tránh trùng thức ăn khác
     if (flag) {
  800164a:	69fb      	ldr	r3, [r7, #28]
  800164c:	2b00      	cmp	r3, #0
@@ -2724,6 +2728,7 @@ void spawnFoodAt(int slot)
  800169a:	69fb      	ldr	r3, [r7, #28]
  800169c:	2b00      	cmp	r3, #0
  800169e:	f43f af71 	beq.w	8001584 <spawnFoodAt+0x8>
+  
   foodX[slot] = ranX;
  80016a2:	4929      	ldr	r1, [pc, #164]	@ (8001748 <spawnFoodAt+0x1cc>)
  80016a4:	687b      	ldr	r3, [r7, #4]
@@ -2734,7 +2739,7 @@ void spawnFoodAt(int slot)
  80016ae:	687b      	ldr	r3, [r7, #4]
  80016b0:	68fa      	ldr	r2, [r7, #12]
  80016b2:	f841 2023 	str.w	r2, [r1, r3, lsl #2]
-  foodTicksLeft[slot] = FOOD_LIFETIME_TICKS;
+  foodTicksLeft[slot] = FOOD_LIFETIME_TICKS; // reset thời gian sống
  80016b6:	4a26      	ldr	r2, [pc, #152]	@ (8001750 <spawnFoodAt+0x1d4>)
  80016b8:	687b      	ldr	r3, [r7, #4]
  80016ba:	2128      	movs	r1, #40	@ 0x28
@@ -2746,6 +2751,7 @@ void spawnFoodAt(int slot)
  80016c6:	2201      	movs	r2, #1
  80016c8:	701a      	strb	r2, [r3, #0]
 
+  // ngẫu nhiên loại thức ăn
   int r = rand() % 100;
  80016ca:	f009 ffa9 	bl	800b620 <rand>
  80016ce:	4603      	mov	r3, r0
@@ -2758,7 +2764,7 @@ void spawnFoodAt(int slot)
  80016de:	fb01 f202 	mul.w	r2, r1, r2
  80016e2:	1a9b      	subs	r3, r3, r2
  80016e4:	60bb      	str	r3, [r7, #8]
-  if (r < 12)      foodType[slot] = 1; /* 12%: bonus (+5 pts) */
+  if (r < 12)      foodType[slot] = 1; // 12% thức ăn bonus (+5)
  80016e6:	68bb      	ldr	r3, [r7, #8]
  80016e8:	2b0b      	cmp	r3, #11
  80016ea:	dc05      	bgt.n	80016f8 <spawnFoodAt+0x17c>
@@ -2766,12 +2772,12 @@ void spawnFoodAt(int slot)
  80016ee:	687b      	ldr	r3, [r7, #4]
  80016f0:	2101      	movs	r1, #1
  80016f2:	f842 1023 	str.w	r1, [r2, r3, lsl #2]
-  else if (r < 22) foodType[slot] = 2; /* 10%: speed boost (temporary) */
-  else if (r < 30) foodType[slot] = 3; /*  8%: shrink (-2 length, min 3) */
-  else             foodType[slot] = 0; /* 70%: normal */
+  else if (r < 22) foodType[slot] = 2; // 10% tăng tốc
+  else if (r < 30) foodType[slot] = 3; // 8% co ngắn
+  else             foodType[slot] = 0; // 70% thường
 }
  80016f6:	e016      	b.n	8001726 <spawnFoodAt+0x1aa>
-  else if (r < 22) foodType[slot] = 2; /* 10%: speed boost (temporary) */
+  else if (r < 22) foodType[slot] = 2; // 10% tăng tốc
  80016f8:	68bb      	ldr	r3, [r7, #8]
  80016fa:	2b15      	cmp	r3, #21
  80016fc:	dc05      	bgt.n	800170a <spawnFoodAt+0x18e>
@@ -2781,7 +2787,7 @@ void spawnFoodAt(int slot)
  8001704:	f842 1023 	str.w	r1, [r2, r3, lsl #2]
 }
  8001708:	e00d      	b.n	8001726 <spawnFoodAt+0x1aa>
-  else if (r < 30) foodType[slot] = 3; /*  8%: shrink (-2 length, min 3) */
+  else if (r < 30) foodType[slot] = 3; // 8% co ngắn
  800170a:	68bb      	ldr	r3, [r7, #8]
  800170c:	2b1d      	cmp	r3, #29
  800170e:	dc05      	bgt.n	800171c <spawnFoodAt+0x1a0>
@@ -2791,7 +2797,7 @@ void spawnFoodAt(int slot)
  8001716:	f842 1023 	str.w	r1, [r2, r3, lsl #2]
 }
  800171a:	e004      	b.n	8001726 <spawnFoodAt+0x1aa>
-  else             foodType[slot] = 0; /* 70%: normal */
+  else             foodType[slot] = 0; // 70% thường
  800171c:	4a0e      	ldr	r2, [pc, #56]	@ (8001758 <spawnFoodAt+0x1dc>)
  800171e:	687b      	ldr	r3, [r7, #4]
  8001720:	2100      	movs	r1, #0
@@ -2821,7 +2827,7 @@ void moveSnake(void)
  800175c:	b580      	push	{r7, lr}
  800175e:	b082      	sub	sp, #8
  8001760:	af00      	add	r7, sp, #0
-  tailX = snakeX[snakeLength - 1];
+  tailX = snakeX[snakeLength - 1]; // giữ lại đuôi cũ
  8001762:	4b58      	ldr	r3, [pc, #352]	@ (80018c4 <moveSnake+0x168>)
  8001764:	681b      	ldr	r3, [r3, #0]
  8001766:	3b01      	subs	r3, #1
@@ -2838,6 +2844,7 @@ void moveSnake(void)
  800177e:	4a55      	ldr	r2, [pc, #340]	@ (80018d4 <moveSnake+0x178>)
  8001780:	6013      	str	r3, [r2, #0]
 
+  // dịch chuyển tọa độ các đốt thân
   for (int i = snakeLength - 1; i > 0; i--) {
  8001782:	4b50      	ldr	r3, [pc, #320]	@ (80018c4 <moveSnake+0x168>)
  8001784:	681b      	ldr	r3, [r3, #0]
@@ -2868,6 +2875,8 @@ void moveSnake(void)
  80017b8:	2b00      	cmp	r3, #0
  80017ba:	dce7      	bgt.n	800178c <moveSnake+0x30>
   }
+  
+  // đi xuyên màn hình dựa theo modulo
   if (snakeDir == 0) snakeY[0] = (snakeY[0] - 1 + MAX_GAME_Y) % MAX_GAME_Y;
  80017bc:	4b46      	ldr	r3, [pc, #280]	@ (80018d8 <moveSnake+0x17c>)
  80017be:	681b      	ldr	r3, [r3, #0]
@@ -2951,12 +2960,13 @@ void moveSnake(void)
  8001860:	1aca      	subs	r2, r1, r3
  8001862:	4b19      	ldr	r3, [pc, #100]	@ (80018c8 <moveSnake+0x16c>)
  8001864:	601a      	str	r2, [r3, #0]
-  lastAppliedDir = snakeDir; /* direction actually reflected in the body layout */
+  lastAppliedDir = snakeDir; // lưu lại hướng thực tế vừa di chuyển
  8001866:	4b1c      	ldr	r3, [pc, #112]	@ (80018d8 <moveSnake+0x17c>)
  8001868:	681b      	ldr	r3, [r3, #0]
  800186a:	4a1d      	ldr	r2, [pc, #116]	@ (80018e0 <moveSnake+0x184>)
  800186c:	6013      	str	r3, [r2, #0]
 
+  // xử lý cổng dịch chuyển không gian ở map 6
   if (currentMap == 6) {
  800186e:	4b1d      	ldr	r3, [pc, #116]	@ (80018e4 <moveSnake+0x188>)
  8001870:	681b      	ldr	r3, [r3, #0]
@@ -3200,7 +3210,7 @@ int checkCollision(void)
  8001a22:	4603      	mov	r3, r0
  8001a24:	2b00      	cmp	r3, #0
  8001a26:	d001      	beq.n	8001a2c <checkCollision+0x28>
-    return 0; /* Collided with wall */
+    return 0; /* Đâm vào tường vật cản */
  8001a28:	2300      	movs	r3, #0
  8001a2a:	e042      	b.n	8001ab2 <checkCollision+0xae>
   }
@@ -3208,7 +3218,7 @@ int checkCollision(void)
  8001a2c:	2301      	movs	r3, #1
  8001a2e:	607b      	str	r3, [r7, #4]
  8001a30:	e014      	b.n	8001a5c <checkCollision+0x58>
-    if (snakeX[0] == snakeX[i] && snakeY[0] == snakeY[i]) return 0; /* Bit itself */
+    if (snakeX[0] == snakeX[i] && snakeY[0] == snakeY[i]) return 0; /* Tự cắn thân */
  8001a32:	4b22      	ldr	r3, [pc, #136]	@ (8001abc <checkCollision+0xb8>)
  8001a34:	681a      	ldr	r2, [r3, #0]
  8001a36:	4921      	ldr	r1, [pc, #132]	@ (8001abc <checkCollision+0xb8>)
@@ -3265,7 +3275,7 @@ int checkCollision(void)
  8001a9a:	4a0f      	ldr	r2, [pc, #60]	@ (8001ad8 <checkCollision+0xd4>)
  8001a9c:	683b      	ldr	r3, [r7, #0]
  8001a9e:	6013      	str	r3, [r2, #0]
-      return 2; /* Ate food */
+      return 2; /* Đã ăn thức ăn */
  8001aa0:	2302      	movs	r3, #2
  8001aa2:	e006      	b.n	8001ab2 <checkCollision+0xae>
   for (int f = 0; f < MAX_FOOD; f++) {
@@ -3277,7 +3287,7 @@ int checkCollision(void)
  8001aae:	dddd      	ble.n	8001a6c <checkCollision+0x68>
     }
   }
-  return 1; /* Normal move */
+  return 1; /* Di chuyển bình thường */
  8001ab0:	2301      	movs	r3, #1
 }
  8001ab2:	4618      	mov	r0, r3
@@ -3327,7 +3337,7 @@ int main(void)
   Flash_LoadHighScore();
  8001b06:	f001 fea9 	bl	800385c <Flash_LoadHighScore>
 
-  /* Initialize SDRAM */
+  /* Khởi tạo bộ nhớ ngoài SDRAM */
   FMC_SDRAM_CommandTypeDef command;
   BSP_SDRAM_Initialization_Sequence(&hsdram1, &command);
  8001b0a:	f107 0358 	add.w	r3, r7, #88	@ 0x58
@@ -3335,22 +3345,22 @@ int main(void)
  8001b10:	4834      	ldr	r0, [pc, #208]	@ (8001be4 <main+0x108>)
  8001b12:	f001 fba3 	bl	800325c <BSP_SDRAM_Initialization_Sequence>
 
-  /* Initialize LCD via LTDC and ILI9341 */
+  /* Khởi tạo LCD qua LTDC và chip ILI9341 */
   MX_LTDC_Init();
  8001b16:	f001 fa3d 	bl	8002f94 <MX_LTDC_Init>
 
-  /* Initialize touch screen */
+  /* Khởi tạo màn hình cảm ứng */
   BSP_TS_Init(LCD_W, LCD_H);
  8001b1a:	f44f 71a0 	mov.w	r1, #320	@ 0x140
  8001b1e:	20f0      	movs	r0, #240	@ 0xf0
  8001b20:	f001 fbf8 	bl	8003314 <BSP_TS_Init>
 
-  // Clear screen
+  // xóa màn hình
   LCD_Clear(COLOR_BLACK);
  8001b24:	2000      	movs	r0, #0
  8001b26:	f7fe fda5 	bl	8000674 <LCD_Clear>
 
-  // Show startup menu screen
+  // vẽ màn hình menu khởi động
   drawMenuScreen();
  8001b2a:	f7ff f8cd 	bl	8000cc8 <drawMenuScreen>
   drawControlPanel();
@@ -3361,12 +3371,12 @@ int main(void)
  8001b36:	4603      	mov	r3, r0
  8001b38:	4618      	mov	r0, r3
  8001b3a:	f009 fd43 	bl	800b5c4 <srand>
-  gameStatus = 0; /* Start in Menu state */
+  gameStatus = 0; /* Thiết lập trạng thái ban đầu là Menu */
  8001b3e:	4b2a      	ldr	r3, [pc, #168]	@ (8001be8 <main+0x10c>)
  8001b40:	2200      	movs	r2, #0
  8001b42:	601a      	str	r2, [r3, #0]
 
-  /* Create Mutex */
+  /* Tạo khóa Mutex */
   osMutexDef(gameMutex);
  8001b44:	2300      	movs	r3, #0
  8001b46:	657b      	str	r3, [r7, #84]	@ 0x54
@@ -3378,7 +3388,7 @@ int main(void)
  8001b54:	4a25      	ldr	r2, [pc, #148]	@ (8001bec <main+0x110>)
  8001b56:	6013      	str	r3, [r2, #0]
 
-  /* Create Tasks */
+  /* Tạo các tác vụ FreeRTOS */
   osThreadDef(gameTask, StartGameTask, osPriorityNormal, 0, 512);
  8001b58:	4b25      	ldr	r3, [pc, #148]	@ (8001bf0 <main+0x114>)
  8001b5a:	f107 0440 	add.w	r4, r7, #64	@ 0x40
@@ -3468,7 +3478,7 @@ int main(void)
 08001c10 <StartGameTask>:
 }
 
-/* ---------- FreeRTOS Tasks ---------- */
+/* ---------- Các tác vụ FreeRTOS ---------- */
 void StartGameTask(void const * argument)
 {
  8001c10:	b580      	push	{r7, lr}
@@ -3483,7 +3493,7 @@ void StartGameTask(void const * argument)
  8001c20:	f001 f822 	bl	8002c68 <Sound_Play>
   for(;;)
   {
-    HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_14); /* Toggle Red LED for alive status */
+    HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_14); /* Nhấp nháy LED đỏ báo hiệu vi điều khiển đang chạy */
  8001c24:	f44f 4180 	mov.w	r1, #16384	@ 0x4000
  8001c28:	4894      	ldr	r0, [pc, #592]	@ (8001e7c <StartGameTask+0x26c>)
  8001c2a:	f004 fb8a 	bl	8006342 <HAL_GPIO_TogglePin>
@@ -3496,8 +3506,7 @@ void StartGameTask(void const * argument)
  8001c36:	681b      	ldr	r3, [r3, #0]
  8001c38:	2b01      	cmp	r3, #1
  8001c3a:	f040 81b2 	bne.w	8001fa2 <StartGameTask+0x392>
-      /* Expire stale pellets so no single pellet is mandatory - one that
-         sits uneaten for too long vanishes and relocates on its own. */
+      /* Hủy kích hoạt mồi cũ khi quá hạn và sinh mồi mới. */
       osMutexWait(gameMutexHandle, osWaitForever);
  8001c3e:	4b91      	ldr	r3, [pc, #580]	@ (8001e84 <StartGameTask+0x274>)
  8001c40:	681b      	ldr	r3, [r3, #0]
@@ -3638,12 +3647,11 @@ void StartGameTask(void const * argument)
  8001d38:	4b5a      	ldr	r3, [pc, #360]	@ (8001ea4 <StartGameTask+0x294>)
  8001d3a:	781b      	ldrb	r3, [r3, #0]
  8001d3c:	72fb      	strb	r3, [r7, #11]
-          gameStatus = 2; /* Game over */
+          gameStatus = 2; /* Thua game */
  8001d3e:	4b50      	ldr	r3, [pc, #320]	@ (8001e80 <StartGameTask+0x270>)
  8001d40:	2202      	movs	r2, #2
  8001d42:	601a      	str	r2, [r3, #0]
-          /* Game over invalidates any paused-game snapshot. Persist even when
-             the high score did not change so CONTINUE cannot revive it. */
+          /* Xóa game đã lưu khi thua cuộc để tránh khôi phục chơi tiếp. */
           needSave = 1;
  8001d44:	2301      	movs	r3, #1
  8001d46:	f887 302b 	strb.w	r3, [r7, #43]	@ 0x2b
@@ -3688,7 +3696,7 @@ void StartGameTask(void const * argument)
  8001d92:	2b02      	cmp	r3, #2
  8001d94:	d01c      	beq.n	8001dd0 <StartGameTask+0x1c0>
  8001d96:	e097      	b.n	8001ec8 <StartGameTask+0x2b8>
-            case 1: /* bonus */
+            case 1: /* ăn mồi bonus */
               Sound_Play(SOUND_BONUS);
  8001d98:	2003      	movs	r0, #3
  8001d9a:	f000 ff65 	bl	8002c68 <Sound_Play>
@@ -3719,7 +3727,7 @@ void StartGameTask(void const * argument)
  8001dcc:	6013      	str	r3, [r2, #0]
               break;
  8001dce:	e097      	b.n	8001f00 <StartGameTask+0x2f0>
-            case 2: /* speed boost */
+            case 2: /* ăn mồi tăng tốc */
               Sound_Play(SOUND_SPEED_BOOST);
  8001dd0:	2004      	movs	r0, #4
  8001dd2:	f000 ff49 	bl	8002c68 <Sound_Play>
@@ -3754,7 +3762,7 @@ void StartGameTask(void const * argument)
  8001e0a:	601a      	str	r2, [r3, #0]
               break;
  8001e0c:	e078      	b.n	8001f00 <StartGameTask+0x2f0>
-            case 3: /* shrink */
+            case 3: /* ăn mồi co ngắn thân */
               Sound_Play(SOUND_SHRINK);
  8001e0e:	2005      	movs	r0, #5
  8001e10:	f000 ff2a 	bl	8002c68 <Sound_Play>
@@ -3838,7 +3846,7 @@ void StartGameTask(void const * argument)
  8001ebc:	2000039c 	.word	0x2000039c
  8001ec0:	200015a0 	.word	0x200015a0
  8001ec4:	20000c9c 	.word	0x20000c9c
-            default: /* normal */
+            default: /* ăn mồi thường */
               Sound_Play(SOUND_EAT);
  8001ec8:	2002      	movs	r0, #2
  8001eca:	f000 fecd 	bl	8002c68 <Sound_Play>
@@ -4022,7 +4030,7 @@ void StartGameTask(void const * argument)
  800200c:	681b      	ldr	r3, [r3, #0]
  800200e:	4618      	mov	r0, r3
  8002010:	f007 fc40 	bl	8009894 <osMutexRelease>
-    HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_14); /* Toggle Red LED for alive status */
+    HAL_GPIO_TogglePin(GPIOG, GPIO_PIN_14); /* Nhấp nháy LED đỏ báo hiệu vi điều khiển đang chạy */
  8002014:	e606      	b.n	8001c24 <StartGameTask+0x14>
  8002016:	bf00      	nop
  8002018:	20000390 	.word	0x20000390
@@ -4103,7 +4111,7 @@ void StartDisplayTask(void const * argument)
       lastStatus = currentStatus;
  80020be:	6e7b      	ldr	r3, [r7, #100]	@ 0x64
  80020c0:	f8c7 308c 	str.w	r3, [r7, #140]	@ 0x8c
-      if (currentStatus == 0) // Menu
+      if (currentStatus == 0) // giao diện menu
  80020c4:	6e7b      	ldr	r3, [r7, #100]	@ 0x64
  80020c6:	2b00      	cmp	r3, #0
  80020c8:	d112      	bne.n	80020f0 <StartDisplayTask+0x94>
@@ -4124,13 +4132,13 @@ void StartDisplayTask(void const * argument)
  80020e2:	4b7a      	ldr	r3, [pc, #488]	@ (80022cc <StartDisplayTask+0x270>)
  80020e4:	681b      	ldr	r3, [r3, #0]
  80020e6:	67fb      	str	r3, [r7, #124]	@ 0x7c
-        requestJoyRecalibrate = 1; /* re-center joystick fresh each time Menu is shown */
+        requestJoyRecalibrate = 1; /* hiệu chuẩn lại tâm Joystick mỗi khi vào Menu */
  80020e8:	4b79      	ldr	r3, [pc, #484]	@ (80022d0 <StartDisplayTask+0x274>)
  80020ea:	2201      	movs	r2, #1
  80020ec:	701a      	strb	r2, [r3, #0]
  80020ee:	e034      	b.n	800215a <StartDisplayTask+0xfe>
       }
-      else if (currentStatus == 2) // Game Over
+      else if (currentStatus == 2) // kết thúc game
  80020f0:	6e7b      	ldr	r3, [r7, #100]	@ 0x64
  80020f2:	2b02      	cmp	r3, #2
  80020f4:	d104      	bne.n	8002100 <StartDisplayTask+0xa4>
@@ -4141,7 +4149,7 @@ void StartDisplayTask(void const * argument)
  80020fa:	f7fe fcb7 	bl	8000a6c <drawControlPanel>
  80020fe:	e02c      	b.n	800215a <StartDisplayTask+0xfe>
       }
-      else if (currentStatus == 1) // Just started playing, or resumed from Pause
+      else if (currentStatus == 1) // trạng thái đang chơi hoặc tiếp tục sau khi tạm dừng
  8002100:	6e7b      	ldr	r3, [r7, #100]	@ 0x64
  8002102:	2b01      	cmp	r3, #1
  8002104:	d10f      	bne.n	8002126 <StartDisplayTask+0xca>
@@ -4164,7 +4172,7 @@ void StartDisplayTask(void const * argument)
  8002122:	67bb      	str	r3, [r7, #120]	@ 0x78
  8002124:	e019      	b.n	800215a <StartDisplayTask+0xfe>
       }
-      else if (currentStatus == 3) // Paused
+      else if (currentStatus == 3) // tạm dừng
  8002126:	6e7b      	ldr	r3, [r7, #100]	@ 0x64
  8002128:	2b03      	cmp	r3, #3
  800212a:	d102      	bne.n	8002132 <StartDisplayTask+0xd6>
@@ -4173,7 +4181,7 @@ void StartDisplayTask(void const * argument)
  800212c:	f7fe ffb4 	bl	8001098 <drawPausedOverlay>
  8002130:	e013      	b.n	800215a <StartDisplayTask+0xfe>
       }
-      else if (currentStatus == 4) // Help
+      else if (currentStatus == 4) // trợ giúp
  8002132:	6e7b      	ldr	r3, [r7, #100]	@ 0x64
  8002134:	2b04      	cmp	r3, #4
  8002136:	d102      	bne.n	800213e <StartDisplayTask+0xe2>
@@ -4182,7 +4190,7 @@ void StartDisplayTask(void const * argument)
  8002138:	f7fe fed8 	bl	8000eec <drawHelpScreen>
  800213c:	e00d      	b.n	800215a <StartDisplayTask+0xfe>
       }
-      else if (currentStatus == 5) // Countdown before start/resume
+      else if (currentStatus == 5) // đếm ngược trước khi bắt đầu
  800213e:	6e7b      	ldr	r3, [r7, #100]	@ 0x64
  8002140:	2b05      	cmp	r3, #5
  8002142:	d10a      	bne.n	800215a <StartDisplayTask+0xfe>
@@ -4213,7 +4221,7 @@ void StartDisplayTask(void const * argument)
  800216a:	4618      	mov	r0, r3
  800216c:	f007 fb44 	bl	80097f8 <osMutexWait>
       
-      // Clear old tail
+      // xóa đuôi cũ
       if (tailX * PIXEL_SIZE < 240 && tailY * PIXEL_SIZE < 240)
  8002170:	4b5a      	ldr	r3, [pc, #360]	@ (80022dc <StartDisplayTask+0x280>)
  8002172:	681a      	ldr	r2, [r3, #0]
@@ -4256,9 +4264,9 @@ void StartDisplayTask(void const * argument)
  80021b8:	f7fe fa24 	bl	8000604 <LCD_FillRect>
       }
 
-      // Clear cells vacated by shrink-food or an expired pellet - nothing
-      // else will get redrawn over these this frame, so they need this
-      // explicit blackout or a "ghost" square would linger on screen.
+      // xóa ô trống khi thức ăn hết hạn hoặc rắn co ngắn
+      // xóa các điểm trống để tránh để lại vết trên màn hình
+      // xóa vết đen để tránh hiện tượng bóng ma
       for (int c = 0; c < pendingClearCount; c++)
  80021bc:	2300      	movs	r3, #0
  80021be:	673b      	str	r3, [r7, #112]	@ 0x70
@@ -4303,7 +4311,7 @@ void StartDisplayTask(void const * argument)
  8002208:	2200      	movs	r2, #0
  800220a:	601a      	str	r2, [r3, #0]
 
-      // Draw snake
+      // vẽ rắn
       for (int i = 0; i < snakeLength; i++) {
  800220c:	2300      	movs	r3, #0
  800220e:	66fb      	str	r3, [r7, #108]	@ 0x6c
@@ -4354,7 +4362,7 @@ void StartDisplayTask(void const * argument)
  8002270:	dbcf      	blt.n	8002212 <StartDisplayTask+0x1b6>
       }
 
-      // Draw all active food pellets (color indicates type: normal/bonus/speed/shrink)
+      // vẽ các viên thức ăn đang hoạt động
       for (int f = 0; f < MAX_FOOD; f++) {
  8002272:	2300      	movs	r3, #0
  8002274:	66bb      	str	r3, [r7, #104]	@ 0x68
@@ -4449,7 +4457,7 @@ void StartDisplayTask(void const * argument)
         }
       }
       
-      // Update score if it changed
+      // cập nhật điểm số nếu thay đổi
       if (score != lastScore)
  8002352:	4b69      	ldr	r3, [pc, #420]	@ (80024f8 <StartDisplayTask+0x49c>)
  8002354:	681b      	ldr	r3, [r3, #0]
@@ -4481,7 +4489,7 @@ void StartDisplayTask(void const * argument)
  800238c:	f7fe fa22 	bl	80007d4 <LCD_DrawString>
       }
 
-      // Update speed if it changed
+      // cập nhật tốc độ nếu thay đổi
       if (gameSpeed != lastGameSpeed)
  8002390:	4b5c      	ldr	r3, [pc, #368]	@ (8002504 <StartDisplayTask+0x4a8>)
  8002392:	681b      	ldr	r3, [r3, #0]
@@ -4494,7 +4502,7 @@ void StartDisplayTask(void const * argument)
  800239c:	681b      	ldr	r3, [r3, #0]
  800239e:	67bb      	str	r3, [r7, #120]	@ 0x78
         char spdBuf[8];
-        sprintf(spdBuf, "%-3d", gameSpeed); // pad with spaces in case it goes from 100 to 90
+        sprintf(spdBuf, "%-3d", gameSpeed); // đệm khoảng trắng để tránh lỗi hiển thị khi giảm số chữ số
  80023a0:	4b58      	ldr	r3, [pc, #352]	@ (8002504 <StartDisplayTask+0x4a8>)
  80023a2:	681a      	ldr	r2, [r3, #0]
  80023a4:	f107 0348 	add.w	r3, r7, #72	@ 0x48
@@ -4548,7 +4556,7 @@ void StartDisplayTask(void const * argument)
  80023fc:	2b00      	cmp	r3, #0
  80023fe:	d173      	bne.n	80024e8 <StartDisplayTask+0x48c>
     {
-      // In menu: update map number if it changed
+      // cập nhật số map trong menu nếu thay đổi
       if (currentMap != lastMap)
  8002400:	4b44      	ldr	r3, [pc, #272]	@ (8002514 <StartDisplayTask+0x4b8>)
  8002402:	681b      	ldr	r3, [r3, #0]
@@ -4579,7 +4587,7 @@ void StartDisplayTask(void const * argument)
  8002436:	2046      	movs	r0, #70	@ 0x46
  8002438:	f7fe f9cc 	bl	80007d4 <LCD_DrawString>
         
-        // Also update control panel map number
+        // cập nhật số bản đồ dưới thanh trạng thái
         sprintf(mapBuf, "%02d", currentMap);
  800243c:	4b35      	ldr	r3, [pc, #212]	@ (8002514 <StartDisplayTask+0x4b8>)
  800243e:	681a      	ldr	r2, [r3, #0]
@@ -4762,7 +4770,7 @@ void StartInputTask(void const * argument)
  8002598:	2300      	movne	r3, #0
  800259a:	b2db      	uxtb	r3, r3
  800259c:	72fb      	strb	r3, [r7, #11]
-    uint8_t buttonPressed = (buttonState && !lastButtonState); /* rising edge */
+    uint8_t buttonPressed = (buttonState && !lastButtonState); /* sườn lên nút bấm */
  800259e:	7afb      	ldrb	r3, [r7, #11]
  80025a0:	2b00      	cmp	r3, #0
  80025a2:	d004      	beq.n	80025ae <StartInputTask+0x76>
@@ -4777,7 +4785,7 @@ void StartInputTask(void const * argument)
  80025b2:	7afb      	ldrb	r3, [r7, #11]
  80025b4:	75fb      	strb	r3, [r7, #23]
 
-    if (gameStatus == 1) // Playing state
+    if (gameStatus == 1) // trạng thái đang chơi
  80025b6:	4b7b      	ldr	r3, [pc, #492]	@ (80027a4 <StartInputTask+0x26c>)
  80025b8:	681b      	ldr	r3, [r3, #0]
  80025ba:	2b01      	cmp	r3, #1
@@ -4889,9 +4897,9 @@ void StartInputTask(void const * argument)
  8002684:	601a      	str	r2, [r3, #0]
         }
       }
-      // Joystick direction (Up/Right/Down/Left), blocked from reversing onto the
-      // snake's actual current heading (not the possibly-already-changed snakeDir,
-      // which could be flipped twice within one movement tick otherwise)
+      // kiểm tra hướng joystick và chặn quay đầu 180 độ
+      // hướng thực tế của rắn
+      // tránh quay đầu 180 độ trong 1 tick
       if (joyDir == 0 && lastAppliedDir != 2) snakeDir = 0;
  8002686:	68fb      	ldr	r3, [r7, #12]
  8002688:	2b00      	cmp	r3, #0
@@ -4943,12 +4951,11 @@ void StartInputTask(void const * argument)
  80026dc:	7abb      	ldrb	r3, [r7, #10]
  80026de:	2b00      	cmp	r3, #0
  80026e0:	d004      	beq.n	80026ec <StartInputTask+0x1b4>
-        gameStatus = 3; /* Pause */
+        gameStatus = 3; /* Tạm dừng game */
  80026e2:	4b30      	ldr	r3, [pc, #192]	@ (80027a4 <StartInputTask+0x26c>)
  80026e4:	2203      	movs	r2, #3
  80026e6:	601a      	str	r2, [r3, #0]
-        /* Save while holding the game mutex so movement cannot modify the
-           snapshot during the Flash erase/program operation. */
+        /* Lưu trạng thái game vào Flash khi tạm dừng dưới sự bảo vệ của Mutex. */
         Flash_SavePausedGame();
  80026e8:	f001 f928 	bl	800393c <Flash_SavePausedGame>
       }
@@ -4973,7 +4980,7 @@ void StartInputTask(void const * argument)
  800270c:	f007 f854 	bl	80097b8 <osDelay>
  8002710:	e29c      	b.n	8002c4c <StartInputTask+0x714>
     }
-    else if (gameStatus == 3) // Paused state
+    else if (gameStatus == 3) // tạm dừng state
  8002712:	4b24      	ldr	r3, [pc, #144]	@ (80027a4 <StartInputTask+0x26c>)
  8002714:	681b      	ldr	r3, [r3, #0]
  8002716:	2b03      	cmp	r3, #3
@@ -4990,7 +4997,7 @@ void StartInputTask(void const * argument)
  8002726:	f04f 31ff 	mov.w	r1, #4294967295
  800272a:	4618      	mov	r0, r3
  800272c:	f007 f864 	bl	80097f8 <osMutexWait>
-        BeginCountdown(); /* Resume after 3-2-1 */
+        BeginCountdown(); /* Tiếp tục sau đếm ngược 3-2-1 */
  8002730:	f7ff f94e 	bl	80019d0 <BeginCountdown>
         osMutexRelease(gameMutexHandle);
  8002734:	4b1c      	ldr	r3, [pc, #112]	@ (80027a8 <StartInputTask+0x270>)
@@ -5003,7 +5010,7 @@ void StartInputTask(void const * argument)
  8002744:	e282      	b.n	8002c4c <StartInputTask+0x714>
       }
     }
-    else if (gameStatus == 0) // Menu state
+    else if (gameStatus == 0) // giao diện menu state
  8002746:	4b17      	ldr	r3, [pc, #92]	@ (80027a4 <StartInputTask+0x26c>)
  8002748:	681b      	ldr	r3, [r3, #0]
  800274a:	2b00      	cmp	r3, #0
@@ -5014,7 +5021,7 @@ void StartInputTask(void const * argument)
  8002752:	2b00      	cmp	r3, #0
  8002754:	f000 8155 	beq.w	8002a02 <StartInputTask+0x4ca>
       {
-        // Touch on START button: discard an older save and start fresh.
+        // chạm nút START để chơi mới
         if (x >= 15 && x <= 110 && y >= 170 && y <= 197)
  8002758:	8abb      	ldrh	r3, [r7, #20]
  800275a:	2b0e      	cmp	r3, #14
@@ -5056,7 +5063,7 @@ void StartInputTask(void const * argument)
  80027ac:	2000002c 	.word	0x2000002c
  80027b0:	20000028 	.word	0x20000028
         }
-        // Touch on CONTINUE button: restore the paused game from Flash.
+        // chạm nút CONTINUE để khôi phục game
         else if (x >= 130 && x <= 225 && y >= 170 && y <= 197 && savedGameAvailable)
  80027b4:	8abb      	ldrh	r3, [r7, #20]
  80027b6:	2b81      	cmp	r3, #129	@ 0x81
@@ -5095,7 +5102,7 @@ void StartInputTask(void const * argument)
  80027f8:	f007 f84c 	bl	8009894 <osMutexRelease>
  80027fc:	e101      	b.n	8002a02 <StartInputTask+0x4ca>
         }
-        // Touch on D-pad LEFT to cycle map down
+        // chạm nút LEFT giảm số bản đồ
         else if (x >= 10 && x <= 38 && y >= 265 && y <= 295)
  80027fe:	8abb      	ldrh	r3, [r7, #20]
  8002800:	2b09      	cmp	r3, #9
@@ -5143,7 +5150,7 @@ void StartInputTask(void const * argument)
  8002852:	f006 ffb1 	bl	80097b8 <osDelay>
  8002856:	e0d4      	b.n	8002a02 <StartInputTask+0x4ca>
         }
-        // Touch on D-pad RIGHT to cycle map up
+        // chạm nút RIGHT tăng số bản đồ
         else if (x >= 72 && x <= 100 && y >= 265 && y <= 295)
  8002858:	8abb      	ldrh	r3, [r7, #20]
  800285a:	2b47      	cmp	r3, #71	@ 0x47
@@ -5191,7 +5198,7 @@ void StartInputTask(void const * argument)
  80028ac:	f006 ff84 	bl	80097b8 <osDelay>
  80028b0:	e0a7      	b.n	8002a02 <StartInputTask+0x4ca>
         }
-        // Touch on D-pad UP to increase difficulty
+        // chạm nút UP tăng độ khó
         else if (x >= 35 && x <= 75 && y >= 240 && y <= 268)
  80028b2:	8abb      	ldrh	r3, [r7, #20]
  80028b4:	2b22      	cmp	r3, #34	@ 0x22
@@ -5237,7 +5244,7 @@ void StartInputTask(void const * argument)
  80028fe:	f006 ff5b 	bl	80097b8 <osDelay>
  8002902:	e07e      	b.n	8002a02 <StartInputTask+0x4ca>
         }
-        // Touch on D-pad DOWN to decrease difficulty
+        // chạm nút DOWN giảm độ khó
         else if (x >= 35 && x <= 75 && y >= 292 && y <= 320)
  8002904:	8abb      	ldrh	r3, [r7, #20]
  8002906:	2b22      	cmp	r3, #34	@ 0x22
@@ -5283,7 +5290,7 @@ void StartInputTask(void const * argument)
  8002952:	f006 ff31 	bl	80097b8 <osDelay>
  8002956:	e054      	b.n	8002a02 <StartInputTask+0x4ca>
         }
-        // Touch on HELP button
+        // chạm nút HELP
         else if (x >= 70 && x <= 170 && y >= 210 && y <= 235)
  8002958:	8abb      	ldrh	r3, [r7, #20]
  800295a:	2b45      	cmp	r3, #69	@ 0x45
@@ -5316,7 +5323,7 @@ void StartInputTask(void const * argument)
           Sound_Play(SOUND_SELECT);
  800298e:	2001      	movs	r0, #1
  8002990:	f000 f96a 	bl	8002c68 <Sound_Play>
-          // Wait for user to release touch so the help screen doesn't instantly close
+          // đợi thả tay để tránh đóng màn hình help lập tức
           while (1)
           {
             BSP_TS_GetState(&TS_State);
@@ -5338,7 +5345,7 @@ void StartInputTask(void const * argument)
  80029ac:	e029      	b.n	8002a02 <StartInputTask+0x4ca>
           }
         }
-        // Touch on COLOR text
+        // chạm vào chữ COLOR để đổi màu rắn
         else if (x >= 40 && x <= 200 && y >= 130 && y <= 160)
  80029ae:	8abb      	ldrh	r3, [r7, #20]
  80029b0:	2b27      	cmp	r3, #39	@ 0x27
@@ -5384,7 +5391,7 @@ void StartInputTask(void const * argument)
  80029fe:	f006 fedb 	bl	80097b8 <osDelay>
         }
       }
-      // Joystick Left/Right cycles map, Up/Down cycles difficulty, button (PA0) starts the game
+      // dùng joystick để chọn map, độ khó hoặc nút PA0 để bắt đầu
       if (joyDir == 3)
  8002a02:	68fb      	ldr	r3, [r7, #12]
  8002a04:	2b03      	cmp	r3, #3
@@ -5567,7 +5574,7 @@ void StartInputTask(void const * argument)
  8002b54:	e07a      	b.n	8002c4c <StartInputTask+0x714>
       }
     }
-    else if (gameStatus == 2) // Game Over state
+    else if (gameStatus == 2) // kết thúc game state
  8002b56:	4b42      	ldr	r3, [pc, #264]	@ (8002c60 <StartInputTask+0x728>)
  8002b58:	681b      	ldr	r3, [r3, #0]
  8002b5a:	2b02      	cmp	r3, #2
@@ -5578,7 +5585,7 @@ void StartInputTask(void const * argument)
  8002b60:	2b00      	cmp	r3, #0
  8002b62:	d02c      	beq.n	8002bbe <StartInputTask+0x686>
       {
-        // Touch on MENU button
+        // chạm nút MENU
         if (x >= 70 && x <= 170 && y >= 170 && y <= 200)
  8002b64:	8abb      	ldrh	r3, [r7, #20]
  8002b66:	2b45      	cmp	r3, #69	@ 0x45
@@ -5611,7 +5618,7 @@ void StartInputTask(void const * argument)
           Sound_Play(SOUND_SELECT);
  8002b9a:	2001      	movs	r0, #1
  8002b9c:	f000 f864 	bl	8002c68 <Sound_Play>
-          // Wait for user to release touch so they don't immediately trigger START/CONTINUE on the Menu screen
+          // đợi thả tay để tránh chạm nhầm khi về menu
           while (1)
           {
             BSP_TS_GetState(&TS_State);
@@ -5635,7 +5642,7 @@ void StartInputTask(void const * argument)
  8002bba:	f006 fdfd 	bl	80097b8 <osDelay>
         }
       }
-      // Joystick button (PA0) returns to menu
+      // nút joystick PA0 để quay về menu
       if (buttonPressed)
  8002bbe:	7abb      	ldrb	r3, [r7, #10]
  8002bc0:	2b00      	cmp	r3, #0
@@ -5665,13 +5672,13 @@ void StartInputTask(void const * argument)
  8002bee:	e02d      	b.n	8002c4c <StartInputTask+0x714>
       }
     }
-    else if (gameStatus == 4) // Help screen
+    else if (gameStatus == 4) // trợ giúp screen
  8002bf0:	4b1b      	ldr	r3, [pc, #108]	@ (8002c60 <StartInputTask+0x728>)
  8002bf2:	681b      	ldr	r3, [r3, #0]
  8002bf4:	2b04      	cmp	r3, #4
  8002bf6:	d129      	bne.n	8002c4c <StartInputTask+0x714>
     {
-      // Any tap or the joystick button returns to Menu
+      // nhấn bất kỳ hoặc nút joystick để quay lại menu
       if (inputDetected || buttonPressed)
  8002bf8:	7dbb      	ldrb	r3, [r7, #22]
  8002bfa:	2b00      	cmp	r3, #0
@@ -5698,7 +5705,7 @@ void StartInputTask(void const * argument)
         Sound_Play(SOUND_SELECT);
  8002c22:	2001      	movs	r0, #1
  8002c24:	f000 f820 	bl	8002c68 <Sound_Play>
-        // Wait for user to release touch if exiting via tap
+        // đợi thả tay khi thoát bằng chạm màn hình
         if (inputDetected)
  8002c28:	7dbb      	ldrb	r3, [r7, #22]
  8002c2a:	2b00      	cmp	r3, #0
@@ -5743,7 +5750,7 @@ void StartInputTask(void const * argument)
   }
 }
 
-/* ---------- Non-blocking sound service for an active buzzer ---------- */
+/* ---------- Dịch vụ còi buzzer phát âm thanh bất đồng bộ ---------- */
 static void Sound_Play(SoundEvent event)
 {
  8002c68:	b480      	push	{r7}
@@ -5751,8 +5758,8 @@ static void Sound_Play(SoundEvent event)
  8002c6c:	af00      	add	r7, sp, #0
  8002c6e:	4603      	mov	r3, r0
  8002c70:	71fb      	strb	r3, [r7, #7]
-  /* A newer event replaces one that has not started yet. The sound task owns
-     all delays, so game/input/display tasks are never blocked by a beep. */
+  /* Sự kiện âm thanh mới đè lên âm thanh cũ. Sound task độc lập
+     nên không gây nghẽn các tác vụ khác. */
   pendingSound = event;
  8002c72:	4a04      	ldr	r2, [pc, #16]	@ (8002c84 <Sound_Play+0x1c>)
  8002c74:	79fb      	ldrb	r3, [r7, #7]
@@ -6003,7 +6010,7 @@ void StartSoundTask(void const * argument)
   }
 }
 
-/* ---------- System Clock ---------- */
+/* ---------- Cấu hình xung nhịp hệ thống ---------- */
 void SystemClock_Config(void)
 {
  8002e24:	b580      	push	{r7, lr}
@@ -6136,7 +6143,7 @@ void SystemClock_Config(void)
 
 08002f08 <MX_I2C3_Init>:
 
-/* ---------- Peripheral Inits ---------- */
+/* ---------- Khởi tạo ngoại vi ---------- */
 static void MX_I2C3_Init(void)
 {
  8002f08:	b580      	push	{r7, lr}
@@ -6304,7 +6311,7 @@ static void MX_LTDC_Init(void)
  8003014:	4819      	ldr	r0, [pc, #100]	@ (800307c <MX_LTDC_Init+0xe8>)
  8003016:	f004 f9d3 	bl	80073c0 <HAL_LTDC_Init>
 
-  /* Configure Layer 0 with RGB565 */
+  /* Cấu hình Layer 0 chuẩn màu RGB565 */
   pLayerCfg.WindowX0 = 0;
  800301a:	2300      	movs	r3, #0
  800301c:	607b      	str	r3, [r7, #4]
@@ -6442,7 +6449,7 @@ static void MX_ADC1_Init(void)
  80030f2:	f000 fe4d 	bl	8003d90 <Error_Handler>
   }
 
-  sConfig.Channel = ADC_CHANNEL_13; /* PC3 -> joystick Y (VRy) */
+  sConfig.Channel = ADC_CHANNEL_13; /* Chân PC3 tương ứng VRy Joystick */
  80030f6:	230d      	movs	r3, #13
  80030f8:	603b      	str	r3, [r7, #0]
   sConfig.Rank = 1;
@@ -6542,7 +6549,7 @@ static void MX_ADC2_Init(void)
  800318e:	f000 fdff 	bl	8003d90 <Error_Handler>
   }
 
-  sConfig.Channel = ADC_CHANNEL_5; /* PA5 -> joystick X (VRx) */
+  sConfig.Channel = ADC_CHANNEL_5; /* Chân PA5 tương ứng VRx Joystick */
  8003192:	2305      	movs	r3, #5
  8003194:	603b      	str	r3, [r7, #0]
   sConfig.Rank = 1;
@@ -6771,7 +6778,7 @@ static void BSP_SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_S
  80032fa:	6839      	ldr	r1, [r7, #0]
  80032fc:	6878      	ldr	r0, [r7, #4]
  80032fe:	f005 f975 	bl	80085ec <HAL_SDRAM_SendCommand>
-  HAL_SDRAM_ProgramRefreshRate(hsdram, 683); /* REFRESH_COUNT */
+  HAL_SDRAM_ProgramRefreshRate(hsdram, 683); /* Chu kỳ tự làm tươi của SDRAM */
  8003302:	f240 21ab 	movw	r1, #683	@ 0x2ab
  8003306:	6878      	ldr	r0, [r7, #4]
  8003308:	f005 f9a5 	bl	8008656 <HAL_SDRAM_ProgramRefreshRate>
@@ -6783,7 +6790,7 @@ static void BSP_SDRAM_Initialization_Sequence(SDRAM_HandleTypeDef *hsdram, FMC_S
 
 08003314 <BSP_TS_Init>:
 
-/* ---------- Touch Screen (from SimpleRacing) ---------- */
+/* ---------- Màn hình cảm ứng (cấu hình STMPE811) ---------- */
 uint8_t BSP_TS_Init(uint16_t XSize, uint16_t YSize)
 {
  8003314:	b580      	push	{r7, lr}
@@ -6794,7 +6801,7 @@ uint8_t BSP_TS_Init(uint16_t XSize, uint16_t YSize)
  800331e:	80fb      	strh	r3, [r7, #6]
  8003320:	4613      	mov	r3, r2
  8003322:	80bb      	strh	r3, [r7, #4]
-  uint8_t ret = 1; /* ERROR */
+  uint8_t ret = 1; /* LỖI */
  8003324:	2301      	movs	r3, #1
  8003326:	73fb      	strb	r3, [r7, #15]
   TsXBoundary = XSize;
@@ -6821,7 +6828,7 @@ uint8_t BSP_TS_Init(uint16_t XSize, uint16_t YSize)
  8003348:	4b0e      	ldr	r3, [pc, #56]	@ (8003384 <BSP_TS_Init+0x70>)
  800334a:	4a0d      	ldr	r2, [pc, #52]	@ (8003380 <BSP_TS_Init+0x6c>)
  800334c:	601a      	str	r2, [r3, #0]
-      ret = 0; /* OK */
+      ret = 0; /* THÀNH CÔNG */
  800334e:	2300      	movs	r3, #0
  8003350:	73fb      	strb	r3, [r7, #15]
   }
@@ -7917,7 +7924,7 @@ static uint8_t Flash_RestoreSavedGame(void)
 
 08003afc <ADC_ReadChannel>:
 
-/* ---------- Joystick (analog VRx/VRy + onboard PA0 button) ---------- */
+/* ---------- Cần gạt Joystick (analog VRx/VRy + nút nhấn PA0) ---------- */
 static uint16_t ADC_ReadChannel(ADC_HandleTypeDef *hadc)
 {
  8003afc:	b580      	push	{r7, lr}
@@ -7958,8 +7965,7 @@ static uint16_t ADC_ReadChannel(ADC_HandleTypeDef *hadc)
 
 08003b38 <JoystickCalibrateCenter>:
 
-/* Capture the resting (centered) stick position so mechanical offset
-   between units doesn't bias direction detection. */
+/* Đọc vị trí trung tâm (trạng thái nghỉ) để tránh sai lệch cơ học. */
 static void JoystickCalibrateCenter(void)
 {
  8003b38:	b580      	push	{r7, lr}
@@ -7988,7 +7994,7 @@ static void JoystickCalibrateCenter(void)
 
 08003b6c <ReadJoystickDirection>:
 
-/* Returns 0:Up, 1:Right, 2:Down, 3:Left, -1:Neutral (within deadzone) */
+/* Trả về hướng: 0:Lên, 1:Phải, 2:Xuống, 3:Trái, -1:Nghỉ (trong deadzone) */
 static int ReadJoystickDirection(void)
 {
  8003b6c:	b580      	push	{r7, lr}
@@ -8015,25 +8021,25 @@ static int ReadJoystickDirection(void)
  8003b96:	b29b      	uxth	r3, r3
  8003b98:	80bb      	strh	r3, [r7, #4]
 
-  if (dx > JOY_DEADZONE)       return 1; /* Right */
+  if (dx > JOY_DEADZONE)       return 1; /* Hướng Phải */
  8003b9a:	f9b7 3006 	ldrsh.w	r3, [r7, #6]
  8003b9e:	f5b3 7f2f 	cmp.w	r3, #700	@ 0x2bc
  8003ba2:	dd01      	ble.n	8003ba8 <ReadJoystickDirection+0x3c>
  8003ba4:	2301      	movs	r3, #1
  8003ba6:	e016      	b.n	8003bd6 <ReadJoystickDirection+0x6a>
-  else if (dx < -JOY_DEADZONE) return 3; /* Left  */
+  else if (dx < -JOY_DEADZONE) return 3; /* Hướng Trái */
  8003ba8:	f9b7 3006 	ldrsh.w	r3, [r7, #6]
  8003bac:	f513 7f2f 	cmn.w	r3, #700	@ 0x2bc
  8003bb0:	da01      	bge.n	8003bb6 <ReadJoystickDirection+0x4a>
  8003bb2:	2303      	movs	r3, #3
  8003bb4:	e00f      	b.n	8003bd6 <ReadJoystickDirection+0x6a>
-  else if (dy > JOY_DEADZONE)  return 2; /* Down  */
+  else if (dy > JOY_DEADZONE)  return 2; /* Hướng Xuống */
  8003bb6:	f9b7 3004 	ldrsh.w	r3, [r7, #4]
  8003bba:	f5b3 7f2f 	cmp.w	r3, #700	@ 0x2bc
  8003bbe:	dd01      	ble.n	8003bc4 <ReadJoystickDirection+0x58>
  8003bc0:	2302      	movs	r3, #2
  8003bc2:	e008      	b.n	8003bd6 <ReadJoystickDirection+0x6a>
-  else if (dy < -JOY_DEADZONE) return 0; /* Up    */
+  else if (dy < -JOY_DEADZONE) return 0; /* Hướng Lên */
  8003bc4:	f9b7 3004 	ldrsh.w	r3, [r7, #4]
  8003bc8:	f513 7f2f 	cmn.w	r3, #700	@ 0x2bc
  8003bcc:	da01      	bge.n	8003bd2 <ReadJoystickDirection+0x66>
@@ -8173,7 +8179,7 @@ static void MX_GPIO_Init(void)
  8003ce2:	607b      	str	r3, [r7, #4]
  8003ce4:	687b      	ldr	r3, [r7, #4]
 
-  /* LCD NCS (PC2) */
+  /* Chân chọn chip LCD NCS (PC2) */
   GPIOC->BSRR = (1UL << 2);
  8003ce6:	4b26      	ldr	r3, [pc, #152]	@ (8003d80 <MX_GPIO_Init+0x190>)
  8003ce8:	2204      	movs	r2, #4
@@ -8196,7 +8202,7 @@ static void MX_GPIO_Init(void)
  8003d02:	481f      	ldr	r0, [pc, #124]	@ (8003d80 <MX_GPIO_Init+0x190>)
  8003d04:	f002 f940 	bl	8005f88 <HAL_GPIO_Init>
 
-  /* LCD WRX (PD13), RDX (PD12) */
+  /* Các chân điều khiển LCD: WRX (PD13), RDX (PD12) */
   GPIOD->BSRR = (1UL << 12) | (1UL << 13);
  8003d08:	4b1e      	ldr	r3, [pc, #120]	@ (8003d84 <MX_GPIO_Init+0x194>)
  8003d0a:	f44f 5240 	mov.w	r2, #12288	@ 0x3000
@@ -8210,7 +8216,7 @@ static void MX_GPIO_Init(void)
  8003d1c:	4819      	ldr	r0, [pc, #100]	@ (8003d84 <MX_GPIO_Init+0x194>)
  8003d1e:	f002 f933 	bl	8005f88 <HAL_GPIO_Init>
 
-  /* LED (PG14) */
+  /* LED báo trạng thái (PG14) */
   GPIO_InitStruct.Pin = GPIO_PIN_14;
  8003d22:	f44f 4380 	mov.w	r3, #16384	@ 0x4000
  8003d26:	627b      	str	r3, [r7, #36]	@ 0x24
@@ -8223,7 +8229,7 @@ static void MX_GPIO_Init(void)
   /* Joystick VRx (PA5)/VRy (PC3) analog GPIO is configured by HAL_ADC_MspInit()
      (auto-generated in stm32f4xx_hal_msp.c) when MX_ADC1_Init/MX_ADC2_Init run. */
 
-  /* Joystick Select button - reuse onboard User button (PA0) */
+  /* Nút nhấn Joystick - sử dụng lại nút USER (PA0) trên board */
   GPIO_InitStruct.Pin = GPIO_PIN_0;
  8003d34:	2301      	movs	r3, #1
  8003d36:	627b      	str	r3, [r7, #36]	@ 0x24
@@ -8239,8 +8245,7 @@ static void MX_GPIO_Init(void)
  8003d46:	4811      	ldr	r0, [pc, #68]	@ (8003d8c <MX_GPIO_Init+0x19c>)
  8003d48:	f002 f91e 	bl	8005f88 <HAL_GPIO_Init>
 
-  /* PC4 drives the base resistor of an external NPN buzzer transistor.
-     Keep it low at startup so the buzzer remains off. */
+  /* Chân PC4 lái Transistor của còi Buzzer. Giữ mức LOW khi khởi động để tắt còi. */
   HAL_GPIO_WritePin(BUZZER_GPIO_PORT, BUZZER_GPIO_PIN, BUZZER_IDLE_STATE);
  8003d4c:	2200      	movs	r2, #0
  8003d4e:	2110      	movs	r1, #16
